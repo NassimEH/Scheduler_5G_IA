@@ -1,0 +1,21 @@
+## ConfigMap Prometheus - configuration minimale
+## Ajoutez ici les scrape_configs pour node-exporter, cAdvisor, kube-state-metrics et vos exporters custom
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: monitoring
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+    scrape_configs:
+      # Exemple minimal : scrape d'un target local (à remplacer par node-exporter endpoints)
+      - job_name: 'kubernetes-nodes'
+        static_configs:
+          - targets: ['localhost:9100']
+
+      # TODO: ajouter:
+      # - kube-state-metrics
+      # - cAdvisor (container metrics)
+      # - exporter custom exposant pod_network_rtt_ms

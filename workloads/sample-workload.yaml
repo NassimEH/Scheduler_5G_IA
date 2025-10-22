@@ -1,0 +1,46 @@
+
+## Namespace pour les workloads d'expérience
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: workloads
+
+---
+## Deployment d'exemple : simulateur de pods UPF
+## - Réplique 3 pods pour répartir la charge sur les worker nodes
+## - Conteneur 'stress' : utilise 'stress-ng' pour générer de la charge CPU
+## - Conteneur 'probe'  : boucle de 'curl' simple pour mesurer un temps de réponse local
+## Note : ce manifest est un prototype; remplacez le probe par un sidecar qui expose /metrics pour Prometheus
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: upf-sim
+  namespace: workloads
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: upf-sim
+  template:
+    metadata:
+      labels:
+        app: upf-sim
+        pod_type: "UPF"
+    spec:
+      containers:
+      - name: stress
+        # Image utilitaire 'netshoot' contient stress-ng et outils réseaux pour prototypage
+        image: nicolaka/netshoot:latest
+        command: ["/bin/sh","-c","while true; do stress-ng --cpu 1 --timeout 300s & sleep 5; done"]
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "256Mi"
+      - name: probe
+        # Petit conteneur qui effectue un curl local pour mesurer un temps de réponse (exemple)
+        image: byrnedo/alpine-curl:latest
+        command: ["/bin/sh","-c","while true; do echo $(date -u +%Y-%m-%dT%H:%M:%SZ) $(curl -s -o /dev/null -w '%{time_total}\n' http://127.0.0.1:80); sleep 5; done"]
+

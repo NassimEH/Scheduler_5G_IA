@@ -1,0 +1,9 @@
+## Configuration Kind pour un cluster local d'expérimentation
+## 1 control-plane et 3 workers — utile pour tester le scheduler, la répartition de charge et les scénarios 5G.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+  - role: worker
+  - role: worker
+  - role: worker
