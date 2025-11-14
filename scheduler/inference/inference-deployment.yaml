@@ -1,0 +1,120 @@
+## Deployment du serveur d'inférence FastAPI
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scheduler-inference
+  namespace: monitoring
+  labels:
+    app: scheduler-inference
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: scheduler-inference
+  template:
+    metadata:
+      labels:
+        app: scheduler-inference
+    spec:
+      serviceAccountName: scheduler-inference
+      containers:
+      - name: inference
+        image: scheduler-inference:latest
+        # Pour le développement local, utilisez une image buildée localement
+        # imagePullPolicy: Never
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: PORT
+          value: "8080"
+        - name: HOST
+          value: "0.0.0.0"
+        - name: MODEL_PATH
+          value: "/models/scheduler_model.pkl"
+        - name: KUBERNETES_API_URL
+          value: "https://kubernetes.default.svc"
+        - name: PROMETHEUS_URL
+          value: "http://prometheus.monitoring.svc.cluster.local:9090"
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 2Gi
+        volumeMounts:
+        - name: model-storage
+          mountPath: /models
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+      volumes:
+      - name: model-storage
+        emptyDir: {}  # Pour l'instant, vide. Le modèle sera ajouté plus tard.
+
+---
+## ServiceAccount avec permissions pour accéder à Kubernetes et Prometheus
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: scheduler-inference
+  namespace: monitoring
+
+---
+## Role avec permissions de lecture
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: scheduler-inference
+  namespace: monitoring
+rules:
+- apiGroups: [""]
+  resources:
+  - pods
+  - nodes
+  verbs: ["get", "list", "watch"]
+
+---
+## RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: scheduler-inference
+  namespace: monitoring
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: scheduler-inference
+subjects:
+- kind: ServiceAccount
+  name: scheduler-inference
+  namespace: monitoring
+
+---
+## Service ClusterIP
+apiVersion: v1
+kind: Service
+metadata:
+  name: scheduler-inference
+  namespace: monitoring
+  labels:
+    app: scheduler-inference
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8080
+    targetPort: 8080
+    name: http
+  selector:
+    app: scheduler-inference
+

@@ -1,0 +1,106 @@
+## DaemonSet pour déployer l'exporter de latence réseau sur chaque node
+## Mesure la latence entre les pods pour évaluer la performance du scheduler
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: network-latency-exporter
+  namespace: monitoring
+  labels:
+    app: network-latency-exporter
+spec:
+  selector:
+    matchLabels:
+      app: network-latency-exporter
+  template:
+    metadata:
+      labels:
+        app: network-latency-exporter
+    spec:
+      serviceAccountName: network-latency-exporter
+      containers:
+      - name: exporter
+        image: network-latency-exporter:latest
+        # Pour le développement local, utilisez une image buildée localement
+        # imagePullPolicy: Never
+        ports:
+        - containerPort: 8080
+          name: metrics
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 200m
+            memory: 256Mi
+      tolerations:
+      - effect: NoSchedule
+        operator: Exists
+
+---
+## ServiceAccount avec permissions pour lister les pods
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: network-latency-exporter
+  namespace: monitoring
+
+---
+## Role avec permissions de lecture sur les pods
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: network-latency-exporter
+  namespace: monitoring
+rules:
+- apiGroups: [""]
+  resources:
+  - pods
+  verbs: ["list", "get", "watch"]
+
+---
+## RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: network-latency-exporter
+  namespace: monitoring
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: network-latency-exporter
+subjects:
+- kind: ServiceAccount
+  name: network-latency-exporter
+  namespace: monitoring
+
+---
+## Service pour exposer l'exporter
+apiVersion: v1
+kind: Service
+metadata:
+  name: network-latency-exporter
+  namespace: monitoring
+  labels:
+    app: network-latency-exporter
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8080
+    targetPort: 8080
+    name: metrics
+  selector:
+    app: network-latency-exporter
+

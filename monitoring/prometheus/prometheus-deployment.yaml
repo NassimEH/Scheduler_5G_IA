@@ -21,21 +21,37 @@ spec:
       labels:
         app: prometheus
     spec:
+      serviceAccountName: prometheus
       containers:
       - name: prometheus
         image: prom/prometheus:latest
         # Indique le fichier de config monté via ConfigMap
         args:
           - "--config.file=/etc/prometheus/prometheus.yml"
+          - "--storage.tsdb.path=/prometheus"
+          - "--storage.tsdb.retention.time=30d"
+          - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+          - "--web.console.templates=/usr/share/prometheus/consoles"
         ports:
         - containerPort: 9090
         volumeMounts:
         - name: config
           mountPath: /etc/prometheus
+        - name: storage
+          mountPath: /prometheus
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 2Gi
       volumes:
       - name: config
         configMap:
           name: prometheus-config
+      - name: storage
+        emptyDir: {}
 
 ---
 ## Service ClusterIP pour accéder à Prometheus depuis le cluster

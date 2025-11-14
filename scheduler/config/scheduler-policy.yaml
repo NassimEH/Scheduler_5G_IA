@@ -1,0 +1,17 @@
+## Configuration du scheduler extender pour kube-scheduler
+## Ce fichier doit être monté dans le kube-scheduler
+apiVersion: kubescheduler.config.k8s.io/v1
+kind: KubeSchedulerConfiguration
+leaderElection:
+  leaderElect: true
+  resourceName: kube-scheduler
+  resourceNamespace: kube-system
+extenders:
+  - urlPrefix: "http://scheduler-extender.monitoring.svc.cluster.local:8080"
+    filterVerb: "filter"
+    prioritizeVerb: "prioritize"
+    weight: 1
+    enableHttps: false
+    nodeCacheCapable: false
+    ignorable: true  # Si l'extender échoue, kube-scheduler continue avec sa logique par défaut
+

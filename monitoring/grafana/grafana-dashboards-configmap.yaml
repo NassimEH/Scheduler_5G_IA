@@ -1,0 +1,313 @@
+## ConfigMap contenant les dashboards Grafana pour visualiser les métriques
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  node-metrics.json: |
+    {
+      "dashboard": {
+        "title": "Node Metrics - CPU/Memory",
+        "tags": ["nodes", "cpu", "memory"],
+        "timezone": "browser",
+        "schemaVersion": 16,
+        "version": 0,
+        "refresh": "10s",
+        "panels": [
+          {
+            "id": 1,
+            "title": "CPU Usage by Node",
+            "type": "graph",
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+            "targets": [
+              {
+                "expr": "100 - (avg by (instance) (irate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
+                "legendFormat": "{{instance}}",
+                "refId": "A"
+              }
+            ],
+            "yaxes": [{"format": "percent", "label": "CPU Usage %"}]
+          },
+          {
+            "id": 2,
+            "title": "Memory Usage by Node",
+            "type": "graph",
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+            "targets": [
+              {
+                "expr": "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100",
+                "legendFormat": "{{instance}}",
+                "refId": "A"
+              }
+            ],
+            "yaxes": [{"format": "percent", "label": "Memory Usage %"}]
+          },
+          {
+            "id": 3,
+            "title": "CPU Load Average",
+            "type": "graph",
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+            "targets": [
+              {
+                "expr": "node_load1",
+                "legendFormat": "1m load - {{instance}}",
+                "refId": "A"
+              },
+              {
+                "expr": "node_load5",
+                "legendFormat": "5m load - {{instance}}",
+                "refId": "B"
+              },
+              {
+                "expr": "node_load15",
+                "legendFormat": "15m load - {{instance}}",
+                "refId": "C"
+              }
+            ],
+            "yaxes": [{"format": "short", "label": "Load"}]
+          },
+          {
+            "id": 4,
+            "title": "Memory Available",
+            "type": "graph",
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+            "targets": [
+              {
+                "expr": "node_memory_MemAvailable_bytes",
+                "legendFormat": "{{instance}}",
+                "refId": "A"
+              }
+            ],
+            "yaxes": [{"format": "bytes", "label": "Memory"}]
+          }
+        ]
+      }
+    }
+  pod-metrics.json: |
+    {
+      "dashboard": {
+        "title": "Pod Metrics - CPU/Memory",
+        "tags": ["pods", "containers", "cpu", "memory"],
+        "timezone": "browser",
+        "schemaVersion": 16,
+        "version": 0,
+        "refresh": "10s",
+        "panels": [
+          {
+            "id": 1,
+            "title": "CPU Usage by Pod",
+            "type": "graph",
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+            "targets": [
+              {
+                "expr": "rate(container_cpu_usage_seconds_total{container!=\"POD\",container!=\"\"}[5m]) * 100",
+                "legendFormat": "{{pod}} - {{container}}",
+                "refId": "A"
+              }
+            ],
+            "yaxes": [{"format": "short", "label": "CPU Usage %"}]
+          },
+          {
+            "id": 2,
+            "title": "Memory Usage by Pod",
+            "type": "graph",
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+            "targets": [
+              {
+                "expr": "container_memory_working_set_bytes{container!=\"POD\",container!=\"\"}",
+                "legendFormat": "{{pod}} - {{container}}",
+                "refId": "A"
+              }
+            ],
+            "yaxes": [{"format": "bytes", "label": "Memory"}]
+          },
+          {
+            "id": 3,
+            "title": "Pod CPU Requests vs Usage",
+            "type": "graph",
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+            "targets": [
+              {
+                "expr": "kube_pod_container_resource_requests{resource=\"cpu\"}",
+                "legendFormat": "Request - {{pod}}",
+                "refId": "A"
+              },
+              {
+                "expr": "rate(container_cpu_usage_seconds_total{container!=\"POD\"}[5m])",
+                "legendFormat": "Usage - {{pod}}",
+                "refId": "B"
+              }
+            ],
+            "yaxes": [{"format": "short", "label": "CPU"}]
+          },
+          {
+            "id": 4,
+            "title": "Pod Memory Requests vs Usage",
+            "type": "graph",
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+            "targets": [
+              {
+                "expr": "kube_pod_container_resource_requests{resource=\"memory\"}",
+                "legendFormat": "Request - {{pod}}",
+                "refId": "A"
+              },
+              {
+                "expr": "container_memory_working_set_bytes{container!=\"POD\"}",
+                "legendFormat": "Usage - {{pod}}",
+                "refId": "B"
+              }
+            ],
+            "yaxes": [{"format": "bytes", "label": "Memory"}]
+          }
+        ]
+      }
+    }
+  network-latency.json: |
+    {
+      "dashboard": {
+        "title": "Network Latency - Pod to Pod",
+        "tags": ["network", "latency", "rtt"],
+        "timezone": "browser",
+        "schemaVersion": 16,
+        "version": 0,
+        "refresh": "10s",
+        "panels": [
+          {
+            "id": 1,
+            "title": "Network RTT between Pods",
+            "type": "graph",
+            "gridPos": {"h": 10, "w": 24, "x": 0, "y": 0},
+            "targets": [
+              {
+                "expr": "pod_network_rtt_ms",
+                "legendFormat": "{{source_pod}} -> {{target_pod}} ({{target_node}})",
+                "refId": "A"
+              }
+            ],
+            "yaxes": [{"format": "ms", "label": "RTT (ms)"}],
+            "lines": true,
+            "points": false
+          },
+          {
+            "id": 2,
+            "title": "Average RTT by Source Node",
+            "type": "graph",
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 10},
+            "targets": [
+              {
+                "expr": "avg by (source_node) (pod_network_rtt_ms)",
+                "legendFormat": "{{source_node}}",
+                "refId": "A"
+              }
+            ],
+            "yaxes": [{"format": "ms", "label": "Avg RTT (ms)"}]
+          },
+          {
+            "id": 3,
+            "title": "Packet Loss",
+            "type": "graph",
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 10},
+            "targets": [
+              {
+                "expr": "pod_network_packet_loss",
+                "legendFormat": "{{source_pod}} -> {{target_pod}}",
+                "refId": "A"
+              }
+            ],
+            "yaxes": [{"format": "percent", "label": "Packet Loss %"}]
+          },
+          {
+            "id": 4,
+            "title": "RTT Heatmap",
+            "type": "heatmap",
+            "gridPos": {"h": 8, "w": 24, "x": 0, "y": 18},
+            "targets": [
+              {
+                "expr": "pod_network_rtt_ms",
+                "legendFormat": "{{source_pod}} -> {{target_pod}}",
+                "refId": "A"
+              }
+            ],
+            "yaxes": [{"format": "ms"}]
+          }
+        ]
+      }
+    }
+  scheduler-comparison.json: |
+    {
+      "dashboard": {
+        "title": "Scheduler Comparison - Default vs ML",
+        "tags": ["scheduler", "comparison", "ml"],
+        "timezone": "browser",
+        "schemaVersion": 16,
+        "version": 0,
+        "refresh": "10s",
+        "panels": [
+          {
+            "id": 1,
+            "title": "CPU Load Balance (Standard Deviation)",
+            "type": "graph",
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+            "targets": [
+              {
+                "expr": "stddev by (scheduler_type) (100 - (avg by (instance, scheduler_type) (irate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100))",
+                "legendFormat": "{{scheduler_type}}",
+                "refId": "A"
+              }
+            ],
+            "yaxes": [{"format": "percent", "label": "CPU Load StdDev"}],
+            "description": "Plus la valeur est basse, mieux la charge est équilibrée"
+          },
+          {
+            "id": 2,
+            "title": "Memory Load Balance (Standard Deviation)",
+            "type": "graph",
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+            "targets": [
+              {
+                "expr": "stddev by (scheduler_type) ((1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100)",
+                "legendFormat": "{{scheduler_type}}",
+                "refId": "A"
+              }
+            ],
+            "yaxes": [{"format": "percent", "label": "Memory Load StdDev"}],
+            "description": "Plus la valeur est basse, mieux la charge est équilibrée"
+          },
+          {
+            "id": 3,
+            "title": "Average Network Latency",
+            "type": "graph",
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+            "targets": [
+              {
+                "expr": "avg by (scheduler_type) (pod_network_rtt_ms)",
+                "legendFormat": "{{scheduler_type}}",
+                "refId": "A"
+              }
+            ],
+            "yaxes": [{"format": "ms", "label": "Avg RTT (ms)"}],
+            "description": "Latence moyenne entre pods"
+          },
+          {
+            "id": 4,
+            "title": "Pods per Node Distribution",
+            "type": "bargauge",
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+            "targets": [
+              {
+                "expr": "count by (node, scheduler_type) (kube_pod_info)",
+                "legendFormat": "{{node}} ({{scheduler_type}})",
+                "refId": "A"
+              }
+            ],
+            "options": {
+              "orientation": "horizontal"
+            }
+          }
+        ]
+      }
+    }
+

@@ -1,5 +1,5 @@
-## Deployment Grafana minimal
-## Pour production, provisionnez un PVC pour le stockage des dashboards et utilisez des datasources configurées via configMap ou provisioning.
+## Deployment Grafana avec provisioning des datasources et dashboards
+## Les dashboards sont provisionnés via ConfigMap
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -15,11 +15,65 @@ spec:
       labels:
         app: grafana
     spec:
+      initContainers:
+      - name: init-dashboards
+        image: busybox:latest
+        command: ['sh', '-c']
+        args:
+          - |
+            mkdir -p /etc/grafana/provisioning/dashboards
+            cp /dashboards-config/node-metrics.json /etc/grafana/provisioning/dashboards/node-metrics.json
+            cp /dashboards-config/pod-metrics.json /etc/grafana/provisioning/dashboards/pod-metrics.json
+            cp /dashboards-config/network-latency.json /etc/grafana/provisioning/dashboards/network-latency.json
+            cp /dashboards-config/scheduler-comparison.json /etc/grafana/provisioning/dashboards/scheduler-comparison.json
+            cp /tmp/dashboard-provisioning/dashboards.yaml /etc/grafana/provisioning/dashboards/dashboards.yaml
+        volumeMounts:
+        - name: grafana-dashboards
+          mountPath: /dashboards-config
+        - name: grafana-dashboard-provisioning
+          mountPath: /tmp/dashboard-provisioning
+        - name: provisioning-storage
+          mountPath: /etc/grafana/provisioning
       containers:
       - name: grafana
         image: grafana/grafana:latest
         ports:
         - containerPort: 3000
+        env:
+        - name: GF_SECURITY_ADMIN_USER
+          value: admin
+        - name: GF_SECURITY_ADMIN_PASSWORD
+          value: admin
+        - name: GF_SERVER_ROOT_URL
+          value: "%(protocol)s://%(domain)s:%(http_port)s/"
+        volumeMounts:
+        - name: grafana-storage
+          mountPath: /var/lib/grafana
+        - name: grafana-datasource
+          mountPath: /etc/grafana/provisioning/datasources
+        - name: provisioning-storage
+          mountPath: /etc/grafana/provisioning
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+      volumes:
+      - name: grafana-storage
+        emptyDir: {}
+      - name: grafana-datasource
+        configMap:
+          name: grafana-datasource
+      - name: grafana-dashboards
+        configMap:
+          name: grafana-dashboards
+      - name: provisioning-storage
+        emptyDir: {}
+      - name: grafana-dashboard-provisioning
+        configMap:
+          name: grafana-dashboard-provisioning
 ---
 ## Service ClusterIP pour Grafana
 apiVersion: v1
@@ -36,4 +90,4 @@ spec:
     app: grafana
 
 ## Remarques :
-## - Ajoutez des dashboards JSON dans monitoring/grafana/dashboards/ et provisionnez-les via configMap si besoin.
+## - Les dashboards sont provisionnés automatiquement au démarrage via l'initContainer

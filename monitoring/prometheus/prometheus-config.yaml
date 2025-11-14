@@ -1,5 +1,5 @@
-## ConfigMap Prometheus - configuration minimale
-## Ajoutez ici les scrape_configs pour node-exporter, cAdvisor, kube-state-metrics et vos exporters custom
+## ConfigMap Prometheus - configuration complète pour la collecte de métriques
+## Collecte les métriques depuis node-exporter, cAdvisor, kube-state-metrics et l'exporter de latence réseau
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -9,13 +9,136 @@ data:
   prometheus.yml: |
     global:
       scrape_interval: 15s
-    scrape_configs:
-      # Exemple minimal : scrape d'un target local (à remplacer par node-exporter endpoints)
-      - job_name: 'kubernetes-nodes'
-        static_configs:
-          - targets: ['localhost:9100']
+      evaluation_interval: 15s
+      external_labels:
+        cluster: 'scheduler5g-dev'
+        environment: 'development'
 
-      # TODO: ajouter:
-      # - kube-state-metrics
-      # - cAdvisor (container metrics)
-      # - exporter custom exposant pod_network_rtt_ms
+    scrape_configs:
+      # Prometheus lui-même
+      - job_name: 'prometheus'
+        static_configs:
+          - targets: ['localhost:9090']
+
+      # node-exporter : métriques système des nodes (CPU, mémoire, disque, réseau)
+      - job_name: 'node-exporter'
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names:
+                - monitoring
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_endpoints_name]
+            action: keep
+            regex: node-exporter
+          - source_labels: [__meta_kubernetes_endpoint_address_target_name]
+            action: replace
+            target_label: instance
+          - source_labels: [__meta_kubernetes_pod_node_name]
+            action: replace
+            target_label: node
+
+      # cAdvisor : métriques des conteneurs (CPU, mémoire, réseau, disque par conteneur)
+      - job_name: 'cadvisor'
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names:
+                - monitoring
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_endpoints_name]
+            action: keep
+            regex: cadvisor
+          - source_labels: [__meta_kubernetes_endpoint_address_target_name]
+            action: replace
+            target_label: instance
+          - source_labels: [__meta_kubernetes_pod_node_name]
+            action: replace
+            target_label: node
+
+      # kube-state-metrics : métriques sur l'état des ressources Kubernetes
+      - job_name: 'kube-state-metrics'
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names:
+                - monitoring
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_endpoints_name]
+            action: keep
+            regex: kube-state-metrics
+
+      # network-latency-exporter : latence réseau entre pods
+      - job_name: 'network-latency-exporter'
+        kubernetes_sd_configs:
+          - role: endpoints
+            namespaces:
+              names:
+                - monitoring
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_endpoints_name]
+            action: keep
+            regex: network-latency-exporter
+          - source_labels: [__meta_kubernetes_pod_node_name]
+            action: replace
+            target_label: node
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: pod
+
+      # Kubernetes API server
+      - job_name: 'kubernetes-apiservers'
+        kubernetes_sd_configs:
+          - role: endpoints
+        scheme: https
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+            action: keep
+            regex: default;kubernetes;https
+
+      # Kubernetes nodes (via kubelet)
+      - job_name: 'kubernetes-nodes'
+        kubernetes_sd_configs:
+          - role: node
+        scheme: https
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        relabel_configs:
+          - action: labelmap
+            regex: __meta_kubernetes_node_label_(.+)
+          - target_label: __address__
+            replacement: kubernetes.default.svc:443
+          - source_labels: [__meta_kubernetes_node_name]
+            regex: (.+)
+            target_label: __metrics_path__
+            replacement: /api/v1/nodes/${1}/proxy/metrics
+
+      # Kubernetes pods (métriques cAdvisor via kubelet)
+      - job_name: 'kubernetes-pods'
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: kubernetes_pod_name
