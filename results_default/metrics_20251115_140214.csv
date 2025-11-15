@@ -1,0 +1,2 @@
+timestamp,cpu_usage_avg,memory_usage_avg,network_latency_avg,pods_per_node_avg,cpu_imbalance,memory_imbalance
+2025-11-15 13:59:44.306962,0.0,0.0,0.0,11.5,0.0,0.0

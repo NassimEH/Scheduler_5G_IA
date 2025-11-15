@@ -22,6 +22,7 @@ class ModelLoader:
         """
         self.model_path = model_path
         self.model = None
+        self.scaler = None
         self.model_version = "stub-v1.0"
         self.is_model_loaded = False
     
@@ -38,15 +39,26 @@ class ModelLoader:
         
         try:
             with open(self.model_path, 'rb') as f:
-                self.model = pickle.load(f)
-            self.is_model_loaded = True
-            logger.info(f"Modèle chargé depuis {self.model_path}")
+                loaded_data = pickle.load(f)
             
-            # Essayer d'obtenir la version du modèle si disponible
-            if hasattr(self.model, 'version'):
-                self.model_version = self.model.version
-            elif hasattr(self.model, '__version__'):
-                self.model_version = self.model.__version__
+            # Vérifier si c'est un wrapper (dict) ou un modèle direct
+            if isinstance(loaded_data, dict):
+                # Modèle wrapper avec scaler
+                self.model = loaded_data.get('model')
+                self.scaler = loaded_data.get('scaler')
+                self.model_version = loaded_data.get('version', '1.0.0')
+                logger.info(f"Modèle wrapper chargé depuis {self.model_path} (version {self.model_version})")
+            else:
+                # Modèle direct (ancien format)
+                self.model = loaded_data
+                logger.info(f"Modèle direct chargé depuis {self.model_path}")
+                # Essayer d'obtenir la version
+                if hasattr(self.model, 'version'):
+                    self.model_version = self.model.version
+                elif hasattr(self.model, '__version__'):
+                    self.model_version = self.model.__version__
+            
+            self.is_model_loaded = True
         except Exception as e:
             logger.error(f"Erreur lors du chargement du modèle: {e}")
             logger.info("Utilisation du modèle stub par défaut")
@@ -75,6 +87,13 @@ class ModelLoader:
             features_array = np.array(features)
         else:
             features_array = features
+        
+        # Normaliser les features si un scaler est disponible
+        if self.scaler is not None:
+            try:
+                features_array = self.scaler.transform(features_array)
+            except Exception as e:
+                logger.warning(f"Erreur lors de la normalisation: {e}")
         
         # Prédire avec le modèle
         if hasattr(self.model, 'predict'):

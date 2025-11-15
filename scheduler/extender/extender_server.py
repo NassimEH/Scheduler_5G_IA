@@ -9,6 +9,8 @@ import json
 from typing import List, Dict, Any, Optional
 from flask import Flask, request, jsonify
 import requests
+from kubernetes import client, config
+from kubernetes.client.rest import ApiException
 
 logging.basicConfig(
     level=logging.INFO,
@@ -24,12 +26,38 @@ INFERENCE_SERVER_URL = os.getenv(
     'http://scheduler-inference.monitoring.svc.cluster.local:8080'
 )
 
+# URL de Prometheus
+PROMETHEUS_URL = os.getenv(
+    'PROMETHEUS_URL',
+    'http://prometheus.monitoring.svc.cluster.local:9090'
+)
+
 
 class ExtenderServer:
     """Serveur extender pour le scheduler Kubernetes"""
     
-    def __init__(self, inference_url: str):
+    def __init__(self, inference_url: str, prometheus_url: Optional[str] = None):
         self.inference_url = inference_url
+        self.prometheus_url = prometheus_url or PROMETHEUS_URL
+        self.k8s_client = None
+        self._init_k8s_client()
+    
+    def _init_k8s_client(self):
+        """Initialise le client Kubernetes"""
+        try:
+            config.load_incluster_config()
+            logger.info("Configuration Kubernetes chargée depuis le cluster")
+        except:
+            try:
+                config.load_kube_config()
+                logger.info("Configuration Kubernetes chargée depuis kubeconfig")
+            except Exception as e:
+                logger.warning(f"Impossible de charger la config Kubernetes: {e}")
+        
+        try:
+            self.k8s_client = client.CoreV1Api()
+        except Exception as e:
+            logger.warning(f"Impossible d'initialiser le client Kubernetes: {e}")
     
     def filter_nodes(
         self,
@@ -180,8 +208,8 @@ class ExtenderServer:
             cpu_available = self._parse_cpu(allocatable.get('cpu', '0'))
             memory_available = self._parse_memory(allocatable.get('memory', '0'))
             
-            # TODO: Récupérer la latence réseau depuis Prometheus
-            # Pour l'instant, on laisse None
+            # Récupérer la latence réseau depuis Prometheus
+            network_latency = self._get_network_latency(node_metadata.get('name'))
             
             node_spec = node.get('spec', {})
             candidate_nodes.append({
@@ -192,8 +220,11 @@ class ExtenderServer:
                 'memory_capacity': memory_capacity,
                 'labels': node_metadata.get('labels', {}),
                 'taints': node_spec.get('taints', []),
-                'network_latency': None
+                'network_latency': network_latency
             })
+        
+        # Récupérer les pods existants depuis l'API Kubernetes
+        existing_pods = self._get_existing_pods(pod_metadata.get('namespace'))
         
         return {
             'pod': {
@@ -206,7 +237,7 @@ class ExtenderServer:
                 'pod_type': pod_metadata.get('labels', {}).get('pod_type')
             },
             'candidate_nodes': candidate_nodes,
-            'existing_pods': []  # TODO: Récupérer depuis l'API Kubernetes
+            'existing_pods': existing_pods
         }
     
     def _has_sufficient_resources(
@@ -272,6 +303,67 @@ class ExtenderServer:
         
         return value * multipliers.get(unit, 1)
     
+    def _get_network_latency(self, node_name: str) -> Optional[float]:
+        """Récupère la latence réseau moyenne pour un node depuis Prometheus"""
+        try:
+            # Requête PromQL pour obtenir la latence moyenne
+            query = f'avg(network_latency_rtt_seconds{{target_node="{node_name}"}})'
+            url = f"{self.prometheus_url}/api/v1/query"
+            params = {'query': query}
+            
+            response = requests.get(url, params=params, timeout=2)
+            response.raise_for_status()
+            
+            data = response.json()
+            if data['status'] == 'success' and data['data']['result']:
+                value = data['data']['result'][0]['value'][1]
+                latency_seconds = float(value)
+                # Convertir en millisecondes
+                return latency_seconds * 1000.0
+            
+            return None
+        except Exception as e:
+            logger.debug(f"Erreur lors de la récupération de la latence réseau: {e}")
+            return None
+    
+    def _get_existing_pods(self, namespace: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Récupère les pods existants depuis l'API Kubernetes"""
+        if not self.k8s_client:
+            return []
+        
+        try:
+            if namespace:
+                pods = self.k8s_client.list_namespaced_pod(namespace)
+            else:
+                pods = self.k8s_client.list_pod_for_all_namespaces()
+            
+            existing_pods = []
+            for pod in pods.items:
+                # Extraire les informations pertinentes
+                pod_info = {
+                    'name': pod.metadata.name,
+                    'namespace': pod.metadata.namespace,
+                    'node': pod.spec.node_name,
+                    'type': pod.metadata.labels.get('pod_type'),
+                    'cpu_request': 0.0,
+                    'memory_request': 0.0
+                }
+                
+                # Calculer les ressources demandées
+                for container in pod.spec.containers:
+                    resources = container.resources.requests or {}
+                    if 'cpu' in resources:
+                        pod_info['cpu_request'] += self._parse_cpu(resources['cpu'])
+                    if 'memory' in resources:
+                        pod_info['memory_request'] += self._parse_memory(resources['memory'])
+                
+                existing_pods.append(pod_info)
+            
+            return existing_pods
+        except Exception as e:
+            logger.debug(f"Erreur lors de la récupération des pods existants: {e}")
+            return []
+    
     def _default_prioritization(self, nodes: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Priorisation par défaut (uniforme) en cas d'erreur"""
         host_priorities = [
@@ -289,7 +381,7 @@ class ExtenderServer:
 
 
 # Initialiser le serveur extender
-extender = ExtenderServer(INFERENCE_SERVER_URL)
+extender = ExtenderServer(INFERENCE_SERVER_URL, PROMETHEUS_URL)
 
 
 @app.route('/filter', methods=['POST'])

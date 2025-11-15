@@ -21,7 +21,7 @@ spec:
       - name: inference
         image: scheduler-inference:latest
         # Pour le développement local, utilisez une image buildée localement
-        # imagePullPolicy: Never
+        imagePullPolicy: Never
         ports:
         - containerPort: 8080
           name: http
@@ -60,7 +60,7 @@ spec:
           periodSeconds: 5
       volumes:
       - name: model-storage
-        emptyDir: {}  # Pour l'instant, vide. Le modèle sera ajouté plus tard.
+        emptyDir: {}  # Le modèle sera copié via kubectl cp après le démarrage
 
 ---
 ## ServiceAccount avec permissions pour accéder à Kubernetes et Prometheus

@@ -20,7 +20,7 @@ spec:
       - name: extender
         image: scheduler-extender:latest
         # Pour le développement local, utilisez une image buildée localement
-        # imagePullPolicy: Never
+        imagePullPolicy: Never
         ports:
         - containerPort: 8080
           name: http

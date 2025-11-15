@@ -37,6 +37,9 @@ spec:
         volumeMounts:
         - name: config
           mountPath: /etc/prometheus
+        - name: recording-rules
+          mountPath: /etc/prometheus/recording-rules
+          readOnly: true
         - name: storage
           mountPath: /prometheus
         resources:
@@ -50,6 +53,9 @@ spec:
       - name: config
         configMap:
           name: prometheus-config
+      - name: recording-rules
+        configMap:
+          name: prometheus-recording-rules
       - name: storage
         emptyDir: {}
 

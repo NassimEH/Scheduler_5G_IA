@@ -101,17 +101,80 @@ kubectl port-forward -n monitoring svc/prometheus 9090:9090
 
 Voir `scheduler/README.md` pour les instructions détaillées.
 
-## Prochaines phases
+## Phase 3 : Modèle ML/RL ✅
 
-### Phase 3 : Modèle ML/RL
-- Scripts de préparation des données
-- Implémentation de l'algorithme (RL ou heuristique ML)
-- Scripts d'entraînement
+### Composants créés
 
-### Phase 4 : Tests et comparaison
-- Scénarios de test reproductibles
-- Scripts de comparaison (kube-scheduler vs scheduler ML)
-- Génération des graphiques de comparaison
+1. **Collecteur de données** (`scheduler/training/data_collector.py`) :
+   - Collecte les données historiques depuis Prometheus et Kubernetes
+   - Génère un dataset d'entraînement avec features et labels
+   - Support pour données synthétiques si nécessaire
+
+2. **Entraîneur de modèle** (`scheduler/training/train_model.py`) :
+   - Implémentation de Random Forest et Gradient Boosting
+   - Validation croisée et métriques d'évaluation
+   - Sauvegarde du modèle avec scaler
+
+3. **Mise à jour du model_loader** :
+   - Support pour charger les modèles entraînés avec scaler
+   - Compatibilité avec l'ancien format (stub)
+
+### Déploiement
+
+Voir `scheduler/training/README.md` pour les instructions détaillées.
+
+**Workflow rapide :**
+```powershell
+# 1. Collecter les données
+python scheduler/training/data_collector.py --prometheus-url http://localhost:9090 --output training_data.csv
+
+# 2. Entraîner le modèle
+python scheduler/training/train_model.py --data training_data.csv --output scheduler_model.pkl
+
+# 3. Déployer le modèle dans le cluster
+kubectl cp scheduler_model.pkl monitoring/<pod-name>:/models/scheduler_model.pkl
+```
+
+## Phase 4 : Tests et comparaison ✅
+
+### Composants créés
+
+1. **Scénarios de test** (`scheduler/testing/test_scenarios.py`) :
+   - Scénarios reproductibles (balanced, high_latency, resource_intensive, mixed)
+   - Création automatique de deployments avec pods 5G (UPF, SMF, CU, DU)
+   - Nettoyage automatique
+
+2. **Comparateur de schedulers** (`scheduler/testing/compare_schedulers.py`) :
+   - Collecte de métriques depuis Prometheus
+   - Génération de graphiques de comparaison (CPU, mémoire, latence, déséquilibre)
+   - Rapport texte avec statistiques et améliorations
+
+### Utilisation
+
+Voir `scheduler/testing/README.md` pour les instructions détaillées.
+
+**Workflow rapide :**
+```powershell
+# 1. Test avec kube-scheduler par défaut
+python scheduler/testing/test_scenarios.py --scenario balanced
+python scheduler/testing/compare_schedulers.py --collect --duration 30 --output results_default
+
+# 2. Activer le scheduler ML
+.\scheduler\scripts\configure-scheduler.ps1
+
+# 3. Test avec scheduler ML
+python scheduler/testing/test_scenarios.py --scenario balanced
+python scheduler/testing/compare_schedulers.py --collect --duration 30 --output results_ml
+
+# 4. Générer le rapport de comparaison
+python scheduler/testing/compare_schedulers.py --default-data results_default/metrics_*.csv --ml-data results_ml/metrics_*.csv --output comparison_results
+```
+
+### Résultats attendus
+
+- **Graphiques** : Comparaison CPU, mémoire, latence, déséquilibre
+- **Rapport** : Statistiques et pourcentage d'amélioration
+- **Objectifs** : Réduction de la latence (UPF proche de l'UE) et meilleur équilibre de charge
 
 ## Références
 

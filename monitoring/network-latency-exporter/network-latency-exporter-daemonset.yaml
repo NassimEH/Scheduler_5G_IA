@@ -21,7 +21,7 @@ spec:
       - name: exporter
         image: network-latency-exporter:latest
         # Pour le développement local, utilisez une image buildée localement
-        # imagePullPolicy: Never
+        imagePullPolicy: Never
         ports:
         - containerPort: 8080
           name: metrics

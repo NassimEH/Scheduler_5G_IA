@@ -37,7 +37,11 @@ class MetricsHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header('Content-Type', 'text/plain; version=0.0.4')
             self.end_headers()
-            self.wfile.write(generate_latest(REGISTRY).encode())
+            metrics = generate_latest(REGISTRY)
+            if isinstance(metrics, str):
+                self.wfile.write(metrics.encode())
+            else:
+                self.wfile.write(metrics)
         elif self.path == '/health':
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')

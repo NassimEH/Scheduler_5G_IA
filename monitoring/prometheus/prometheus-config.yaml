@@ -14,6 +14,10 @@ data:
         cluster: 'scheduler5g-dev'
         environment: 'development'
 
+    # Recording rules pour comparer les schedulers
+    rule_files:
+      - /etc/prometheus/recording-rules/recording-rules.yaml
+
     scrape_configs:
       # Prometheus lui-même
       - job_name: 'prometheus'
