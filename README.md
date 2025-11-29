@@ -105,14 +105,6 @@ chmod +x cleanup.sh
 - Par défaut : Supprime tous les fichiers temporaires, résultats et modèles ML
 - `--KeepModels` (PowerShell) / `--keep-models` (Bash) : Conserve les modèles ML entraînés dans `scheduler/models/`
 
-**Fichiers supprimés** :
-- `results_default/` : Métriques du scheduler par défaut
-- `results_ml/` : Métriques du scheduler ML
-- `comparison_results/` : Graphiques et rapports de comparaison
-- `img/` : Ancien dossier de résultats (si présent)
-- `training_data.csv` : Données d'entraînement
-- `scheduler/models/*.pkl` : Modèles ML (sauf si `--KeepModels` est utilisé)
-
 **Exemples** :
 ```powershell
 # Nettoyer tout
