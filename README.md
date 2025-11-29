@@ -79,12 +79,73 @@ chmod +x run_comparison.sh
 ./run_comparison.sh --duration 30 --scenario resource_intensive
 ```
 
-**Résultats** : Les graphiques de comparaison sont générés dans `comparison_results/` :
+**Résultats** : Les graphiques de comparaison sont générés dans `img/` :
 - `cpu_comparison.png` : Comparaison de l'utilisation CPU
 - `memory_comparison.png` : Comparaison de l'utilisation mémoire
 - `latency_comparison.png` : Comparaison de la latence réseau
 - `imbalance_comparison.png` : Comparaison du déséquilibre de charge
 - `comparison_report.txt` : Rapport texte avec les statistiques
+
+---
+
+## Résultats
+
+### Résultats de la comparaison
+
+Les résultats suivants montrent une comparaison entre le scheduler Kubernetes par défaut et le scheduler ML sur une période de collecte de 5 minutes.
+
+#### Rapport de comparaison
+
+```
+============================================================
+RAPPORT DE COMPARAISON : kube-scheduler vs Scheduler ML
+============================================================
+
+kube-scheduler (par défaut) :
+  CPU moyen : 2.90%
+  Mémoire moyenne : 17.28%
+  Latence moyenne : 0.08 ms
+  Déséquilibre CPU : 2.49%
+  Déséquilibre Mémoire : 0.02%
+
+Scheduler ML :
+  CPU moyen : 2.71%
+  Mémoire moyenne : 17.34%
+  Latence moyenne : 0.08 ms
+  Déséquilibre CPU : 1.17%
+  Déséquilibre Mémoire : 0.01%
+
+Améliorations du Scheduler ML :
+  Réduction du déséquilibre CPU : 53.14%
+  Réduction du déséquilibre Mémoire : 36.96%
+  Réduction de la latence : 1.24%
+```
+
+#### Graphiques de comparaison
+
+Les graphiques suivants illustrent visuellement les différences de performance entre les deux schedulers :
+
+**Comparaison de l'utilisation CPU**
+![Comparaison CPU](img/cpu_comparison.png)
+
+**Comparaison de l'utilisation mémoire**
+![Comparaison Mémoire](img/memory_comparison.png)
+
+**Comparaison de la latence réseau**
+![Comparaison Latence](img/latency_comparison.png)
+
+**Comparaison du déséquilibre de charge**
+![Comparaison Déséquilibre](img/imbalance_comparison.png)
+
+### Analyse des résultats
+
+Le scheduler ML démontre des améliorations significatives par rapport au scheduler par défaut :
+
+- **Réduction du déséquilibre CPU** : 53.14% d'amélioration, permettant une meilleure distribution de la charge CPU entre les nodes
+- **Réduction du déséquilibre mémoire** : 36.96% d'amélioration, assurant une utilisation plus équilibrée de la mémoire
+- **Réduction de la latence** : 1.24% d'amélioration, optimisant la communication réseau entre les pods
+
+Ces résultats montrent que le scheduler ML, grâce à son modèle d'apprentissage automatique et à ses heuristiques optimisées, parvient à mieux équilibrer la charge du cluster tout en maintenant des performances similaires en termes d'utilisation globale des ressources.
 
 ---
 

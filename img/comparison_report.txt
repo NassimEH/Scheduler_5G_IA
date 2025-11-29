@@ -1,0 +1,22 @@
+============================================================
+RAPPORT DE COMPARAISON : kube-scheduler vs Scheduler ML
+============================================================
+
+kube-scheduler (par défaut) :
+  CPU moyen : 2.90%
+  Mémoire moyenne : 17.28%
+  Latence moyenne : 0.08 ms
+  Déséquilibre CPU : 2.49%
+  Déséquilibre Mémoire : 0.02%
+
+Scheduler ML :
+  CPU moyen : 2.71%
+  Mémoire moyenne : 17.34%
+  Latence moyenne : 0.08 ms
+  Déséquilibre CPU : 1.17%
+  Déséquilibre Mémoire : 0.01%
+
+Améliorations du Scheduler ML :
+  Réduction du déséquilibre CPU : 53.14%
+  Réduction du déséquilibre Mémoire : 36.96%
+  Réduction de la latence : 1.24%

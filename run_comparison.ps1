@@ -74,7 +74,7 @@ Write-Host "  ÉTAPE 1 : SCHEDULER PAR DÉFAUT" -ForegroundColor Magenta
 Write-Host "========================================`n" -ForegroundColor Magenta
 
 Write-Host "[4/6] Création du scénario de test ($Scenario)..." -ForegroundColor Yellow
-python scheduler/testing/test_scenarios.py --scenario $Scenario --namespace workloads
+python scheduler/testing/test_scenarios.py --scenario $Scenario --namespace workloads 2>&1 | Out-Null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[ERREUR] Erreur lors de la creation du scenario" -ForegroundColor Red
     exit 1
@@ -119,7 +119,7 @@ if ($extenderPod) {
 }
 
 Write-Host "`nCréation du scénario de test ($Scenario)..." -ForegroundColor Cyan
-python scheduler/testing/test_scenarios.py --scenario $Scenario --namespace workloads
+python scheduler/testing/test_scenarios.py --scenario $Scenario --namespace workloads 2>&1 | Out-Null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[ERREUR] Erreur lors de la creation du scenario" -ForegroundColor Red
     exit 1
@@ -171,7 +171,7 @@ Write-Host "  Default: $($defaultCsv.Name)" -ForegroundColor White
 Write-Host "  ML: $($mlCsv.Name)" -ForegroundColor White
 
 # Générer le rapport de comparaison
-$comparisonOutput = "comparison_results"
+$comparisonOutput = "img"
 New-Item -ItemType Directory -Force -Path $comparisonOutput | Out-Null
 
 python scheduler/testing/compare_schedulers.py `
