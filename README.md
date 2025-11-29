@@ -79,12 +79,56 @@ chmod +x run_comparison.sh
 ./run_comparison.sh --duration 30 --scenario resource_intensive
 ```
 
-**Résultats** : Les graphiques de comparaison sont générés dans `img/` :
+**Résultats** : Les graphiques de comparaison sont générés dans `comparison_results/` :
 - `cpu_comparison.png` : Comparaison de l'utilisation CPU
 - `memory_comparison.png` : Comparaison de l'utilisation mémoire
 - `latency_comparison.png` : Comparaison de la latence réseau
 - `imbalance_comparison.png` : Comparaison du déséquilibre de charge
 - `comparison_report.txt` : Rapport texte avec les statistiques
+
+### Nettoyage des fichiers temporaires
+
+Pour supprimer les métriques, résultats et fichiers temporaires générés :
+
+**Sur Windows (PowerShell)** :
+```powershell
+.\cleanup.ps1
+```
+
+**Sur Linux/Mac** :
+```bash
+chmod +x cleanup.sh
+./cleanup.sh
+```
+
+**Options disponibles** :
+- Par défaut : Supprime tous les fichiers temporaires, résultats et modèles ML
+- `--KeepModels` (PowerShell) / `--keep-models` (Bash) : Conserve les modèles ML entraînés dans `scheduler/models/`
+
+**Fichiers supprimés** :
+- `results_default/` : Métriques du scheduler par défaut
+- `results_ml/` : Métriques du scheduler ML
+- `comparison_results/` : Graphiques et rapports de comparaison
+- `img/` : Ancien dossier de résultats (si présent)
+- `training_data.csv` : Données d'entraînement
+- `scheduler/models/*.pkl` : Modèles ML (sauf si `--KeepModels` est utilisé)
+
+**Exemples** :
+```powershell
+# Nettoyer tout
+.\cleanup.ps1
+
+# Nettoyer mais conserver les modèles ML
+.\cleanup.ps1 -KeepModels
+```
+
+```bash
+# Nettoyer tout
+./cleanup.sh
+
+# Nettoyer mais conserver les modèles ML
+./cleanup.sh --keep-models
+```
 
 ---
 
@@ -121,21 +165,12 @@ Améliorations du Scheduler ML :
   Réduction de la latence : 1.24%
 ```
 
-#### Graphiques de comparaison
+#### Graphique de comparaison
 
-Les graphiques suivants illustrent visuellement les différences de performance entre les deux schedulers :
-
-**Comparaison de l'utilisation CPU**
-![Comparaison CPU](img/cpu_comparison.png)
-
-**Comparaison de l'utilisation mémoire**
-![Comparaison Mémoire](img/memory_comparison.png)
-
-**Comparaison de la latence réseau**
-![Comparaison Latence](img/latency_comparison.png)
+Le graphique suivant illustre visuellement les différences de performance entre les deux schedulers :
 
 **Comparaison du déséquilibre de charge**
-![Comparaison Déséquilibre](img/imbalance_comparison.png)
+![Comparaison Déséquilibre](comparison_results/imbalance_comparison.png)
 
 ### Analyse des résultats
 
@@ -268,6 +303,8 @@ Scheduler_5G_IA/
 ├── setup_project.sh                # Script de configuration Linux/Mac
 ├── run_comparison.ps1              # Script de comparaison Windows
 ├── run_comparison.sh                # Script de comparaison Linux/Mac
+├── cleanup.ps1                     # Script de nettoyage Windows
+├── cleanup.sh                       # Script de nettoyage Linux/Mac
 │
 └── README.md                        # Ce fichier
 

@@ -194,9 +194,9 @@ def _default_heuristic(request: PredictionRequest) -> PredictionResponse:
     """
     Heuristique par défaut si le modèle n'est pas disponible.
     Priorise les nodes avec :
-    1. Optimisation CPU (zone optimale 40-70%)
-    2. Plus de ressources disponibles
-    3. Moins de latence réseau
+    1. CPU bas mais efficace (zone optimale 30-60% pour réduire consommation)
+    2. Latence réseau minimale (PRIORITÉ ÉLEVÉE)
+    3. Mémoire optimisée (moins de charge mémoire)
     4. Meilleur équilibre de charge
     """
     node_scores = {}
@@ -214,39 +214,45 @@ def _default_heuristic(request: PredictionRequest) -> PredictionResponse:
         cpu_ratio = node.cpu_available / node.cpu_capacity if node.cpu_capacity > 0 else 0
         memory_ratio = node.memory_available / node.memory_capacity if node.memory_capacity > 0 else 0
         
-        # 1. Optimisation CPU (30% - PRIORITÉ)
+        # 1. Optimisation CPU (25%) - Zone optimale 30-60% pour réduire consommation
         node_cpu_load = feature_extractor._get_node_cpu_load(node.name)
         cpu_usage_score = 0.0
-        if 0.4 <= node_cpu_load <= 0.7:
-            cpu_usage_score = 1.0  # Zone optimale
-        elif node_cpu_load < 0.4:
-            cpu_usage_score = node_cpu_load / 0.4  # Sous-utilisation
-        else:  # > 0.7
-            cpu_usage_score = max(0.0, 1.0 - (node_cpu_load - 0.7) * 3.33)  # Sur-utilisation
+        if 0.30 <= node_cpu_load <= 0.60:
+            cpu_usage_score = 1.0  # Zone optimale (CPU bas mais efficace)
+        elif node_cpu_load < 0.30:
+            cpu_usage_score = 0.7 + (node_cpu_load / 0.30) * 0.3  # 0.7 à 1.0
+        else:  # > 0.60
+            cpu_usage_score = max(0.0, 1.0 - (node_cpu_load - 0.60) * 2.5)  # Sur-utilisation
         
-        score += cpu_usage_score * 0.30
+        score += cpu_usage_score * 0.25
         
-        # 2. Ressources disponibles (20%)
-        score += cpu_ratio * 0.10
-        score += memory_ratio * 0.10
-        
-        # 3. Latence (15%)
+        # 2. Latence réseau (30% - PRIORITÉ ÉLEVÉE)
         if node.network_latency is not None:
-            latency_score = max(0, 1 - (node.network_latency / 100.0))
-            score += latency_score * 0.15
+            # Amplifier l'impact : très faible latence = score très élevé
+            normalized_latency = min(1.0, node.network_latency / 100.0)
+            latency_score = (1.0 - normalized_latency) ** 1.5  # Fonction exponentielle
+            score += latency_score * 0.30
         
-        # 4. Équilibre de charge (25%)
+        # 3. Optimisation mémoire (20%) - Favoriser nodes avec moins de charge mémoire
         node_memory_load = feature_extractor._get_node_memory_load(node.name)
+        memory_usage_score = 1.0 - node_memory_load  # Inverse : moins de charge = meilleur
+        score += memory_usage_score * 0.20
+        
+        # 4. Ressources disponibles (10%)
+        score += cpu_ratio * 0.05
+        score += memory_ratio * 0.05
+        
+        # 5. Équilibre de charge (10%)
         cpu_balance_penalty = abs(node_cpu_load - avg_cpu_load_cluster)
         mem_balance_penalty = abs(node_memory_load - avg_memory_load_cluster)
         balance_score = 1.0 - ((cpu_balance_penalty + mem_balance_penalty) / 2.0)
-        score += balance_score * 0.25
+        score += balance_score * 0.10
         
-        # 5. Pénalité de surcharge (10%)
+        # 6. Pénalité de surcharge (5%)
         overload_penalty = 0.0
         if node_cpu_load > 0.7 or node_memory_load > 0.7:
             overload_penalty = 1.0
-        score += (1.0 - overload_penalty) * 0.10
+        score += (1.0 - overload_penalty) * 0.05
         
         node_scores[node.name] = score
     

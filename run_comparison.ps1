@@ -171,7 +171,7 @@ Write-Host "  Default: $($defaultCsv.Name)" -ForegroundColor White
 Write-Host "  ML: $($mlCsv.Name)" -ForegroundColor White
 
 # Générer le rapport de comparaison
-$comparisonOutput = "img"
+$comparisonOutput = "comparison_results"
 New-Item -ItemType Directory -Force -Path $comparisonOutput | Out-Null
 
 python scheduler/testing/compare_schedulers.py `

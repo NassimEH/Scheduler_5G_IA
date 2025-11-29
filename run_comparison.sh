@@ -191,7 +191,7 @@ mkdir -p comparison_results
 python scheduler/testing/compare_schedulers.py \
     --default-data "$DEFAULT_CSV" \
     --ml-data "$ML_CSV" \
-    --output img \
+    --output comparison_results \
     --prometheus-url "$PROMETHEUS_URL"
 
 if [ $? -ne 0 ]; then
@@ -205,7 +205,7 @@ echo "  [OK] COMPARAISON TERMINEE !"
 echo "========================================"
 echo ""
 
-echo "Résultats disponibles dans : img"
+echo "Résultats disponibles dans : comparison_results"
 echo ""
 echo "Fichiers générés :"
 ls -1 comparison_results/

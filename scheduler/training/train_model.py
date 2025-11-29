@@ -83,9 +83,10 @@ class SchedulerModelTrainer:
         Le label représente la qualité du placement (score de 0 à 1).
         
         Pour un bon placement, on veut :
-        - Plus de ressources disponibles (CPU, mémoire)
-        - Moins de latence réseau
-        - Meilleur équilibre de charge (PRIORITÉ ÉLEVÉE)
+        - CPU bas mais efficace (zone optimale 30-60% pour réduire consommation)
+        - Latence réseau minimale (PRIORITÉ ÉLEVÉE)
+        - Mémoire optimisée (moins de charge mémoire)
+        - Meilleur équilibre de charge
         - Moins de surcharge
         """
         scores = []
@@ -102,40 +103,47 @@ class SchedulerModelTrainer:
             cpu_ratio = row.get('cpu_available_ratio', 0.5)
             mem_ratio = row.get('memory_available_ratio', 0.5)
             
-            # 1. NOUVEAU : Score d'optimisation CPU (30% - PRIORITÉ ÉLEVÉE)
-            # Favoriser les nodes avec une bonne utilisation CPU (zone optimale 40-70%)
+            # 1. Optimisation CPU (25%) - Zone optimale 30-60% pour réduire consommation
+            # Favoriser les nodes avec charge CPU modérée (moins de consommation globale)
             cpu_usage_score = 0.0
-            if 0.4 <= cpu_load <= 0.7:
-                # Zone optimale : score maximal
+            if 0.30 <= cpu_load <= 0.60:
+                # Zone optimale : score maximal (CPU bas mais efficace)
                 cpu_usage_score = 1.0
-            elif cpu_load < 0.4:
-                # Sous-utilisation : pénalité progressive
-                cpu_usage_score = cpu_load / 0.4  # 0 à 1.0
-            else:  # cpu_load > 0.7
-                # Sur-utilisation : pénalité forte
-                cpu_usage_score = max(0.0, 1.0 - (cpu_load - 0.7) * 3.33)  # Décroît rapidement
+            elif cpu_load < 0.30:
+                # Très faible utilisation : pénalité modérée
+                cpu_usage_score = 0.7 + (cpu_load / 0.30) * 0.3  # 0.7 à 1.0
+            else:  # cpu_load > 0.60
+                # Utilisation élevée : pénalité forte (consomme trop de CPU)
+                cpu_usage_score = max(0.0, 1.0 - (cpu_load - 0.60) * 2.5)  # Décroît rapidement
             
-            score += cpu_usage_score * 0.30  # 30% pour l'optimisation CPU
+            score += cpu_usage_score * 0.25  # 25% pour l'optimisation CPU
             
-            # 2. Score basé sur les ressources disponibles (20% - réduit)
-            score += (cpu_ratio * 0.10 + mem_ratio * 0.10)  # Total 20%
-            
-            # 3. Score basé sur la latence (15% - réduit)
+            # 2. Latence réseau (30% - PRIORITÉ ÉLEVÉE pour amélioration significative)
             latency = row.get('network_latency_normalized', 0.5)
-            score += (1.0 - latency) * 0.15
+            # Amplifier l'impact de la latence : très faible latence = score très élevé
+            latency_score = (1.0 - latency) ** 1.5  # Fonction exponentielle pour favoriser très faible latence
+            score += latency_score * 0.30  # 30% pour la latence (augmenté de 15%)
             
-            # 4. Score basé sur l'équilibre de charge (25% - réduit)
+            # 3. Optimisation mémoire (20%) - Favoriser nodes avec moins de charge mémoire
+            # Moins de charge mémoire = meilleur score
+            memory_usage_score = 1.0 - mem_load  # Inverse : moins de charge = meilleur
+            score += memory_usage_score * 0.20  # 20% pour la mémoire
+            
+            # 4. Ressources disponibles (10% - réduit car moins prioritaire)
+            score += (cpu_ratio * 0.05 + mem_ratio * 0.05)  # Total 10%
+            
+            # 5. Score basé sur l'équilibre de charge (10% - réduit)
             balance_score = row.get('balance_score', None)
             if balance_score is None:
                 cpu_balance_penalty = abs(cpu_load - avg_cpu_load_cluster)
                 mem_balance_penalty = abs(mem_load - avg_memory_load_cluster)
                 balance_score = 1.0 - ((cpu_balance_penalty + mem_balance_penalty) / 2.0)
             
-            score += balance_score * 0.25  # Réduit de 35% à 25%
+            score += balance_score * 0.10  # Réduit à 10%
             
-            # 5. Pénalité de surcharge (10% - réduit)
+            # 6. Pénalité de surcharge (5% - réduit)
             overload_penalty = row.get('overload_penalty', 0.0)
-            score += (1.0 - overload_penalty) * 0.10  # Réduit de 15% à 10%
+            score += (1.0 - overload_penalty) * 0.05  # Réduit à 5%
             
             scores.append(max(0.0, min(1.0, score)))
         

@@ -160,10 +160,11 @@ class ExtenderServer:
                 else:
                     normalized = 0.5
                 
-                # Amplifier : utiliser une fonction exponentielle pour créer plus de différences
-                # Score final entre 0 et 10, avec amplification des meilleurs scores
-                amplified_score = normalized ** 0.7  # Exposant < 1 pour amplifier les différences
-                final_score = int(amplified_score * 10)
+                # Amplifier : utiliser une fonction exponentielle plus agressive pour créer plus de différences
+                # Score final entre 0 et 100, avec forte amplification des meilleurs scores
+                # Exposant < 1 pour amplifier les différences (plus petit = plus d'amplification)
+                amplified_score = normalized ** 0.5  # Exposant réduit de 0.7 à 0.5 pour plus d'amplification
+                final_score = int(amplified_score * 100)  # Augmenté de 10 à 100 pour plus de granularité
                 
                 host_priorities.append({
                     'host': node_name,

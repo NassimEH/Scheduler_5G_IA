@@ -158,34 +158,46 @@ class StubModel:
             cpu_ratio = node_features[0]
             memory_ratio = node_features[1]
             
-            # 1. Optimisation CPU (30% - PRIORITÉ)
+            # 1. Optimisation CPU (25%) - Zone optimale 30-60% pour réduire consommation
             if len(node_features) >= 4:
                 cpu_load = node_features[3]
                 cpu_usage_score = 0.0
-                if 0.4 <= cpu_load <= 0.7:
-                    cpu_usage_score = 1.0  # Zone optimale
-                elif cpu_load < 0.4:
-                    cpu_usage_score = cpu_load / 0.4  # Sous-utilisation
-                else:  # > 0.7
-                    cpu_usage_score = max(0.0, 1.0 - (cpu_load - 0.7) * 3.33)  # Sur-utilisation
-                score += cpu_usage_score * 0.30
+                if 0.30 <= cpu_load <= 0.60:
+                    cpu_usage_score = 1.0  # Zone optimale (CPU bas mais efficace)
+                elif cpu_load < 0.30:
+                    cpu_usage_score = 0.7 + (cpu_load / 0.30) * 0.3  # 0.7 à 1.0
+                else:  # > 0.60
+                    cpu_usage_score = max(0.0, 1.0 - (cpu_load - 0.60) * 2.5)  # Sur-utilisation
+                score += cpu_usage_score * 0.25
             else:
                 # Fallback : utiliser cpu_ratio
-                score += cpu_ratio * 0.30
+                score += cpu_ratio * 0.25
             
-            # 2. Ressources disponibles (20%)
-            score += cpu_ratio * 0.10
-            score += memory_ratio * 0.10
-            
-            # 3. Latence (15%)
+            # 2. Latence réseau (30% - PRIORITÉ ÉLEVÉE)
             if len(node_features) >= 3:
                 latency = node_features[2]
-                score += (1.0 - latency) * 0.15
+                # Amplifier l'impact : très faible latence = score très élevé
+                latency_score = (1.0 - latency) ** 1.5  # Fonction exponentielle
+                score += latency_score * 0.30
+            else:
+                score += (1.0 - 0.5) * 0.30  # Fallback neutre
             
-            # 4. Équilibre de charge (25%)
+            # 3. Optimisation mémoire (20%) - Favoriser nodes avec moins de charge mémoire
+            if len(node_features) >= 5:
+                mem_load = node_features[4]
+                memory_usage_score = 1.0 - mem_load  # Inverse : moins de charge = meilleur
+                score += memory_usage_score * 0.20
+            else:
+                score += memory_ratio * 0.20  # Fallback
+            
+            # 4. Ressources disponibles (10%)
+            score += cpu_ratio * 0.05
+            score += memory_ratio * 0.05
+            
+            # 5. Équilibre de charge (10%)
             if len(node_features) >= 7:
                 balance_score = node_features[6]
-                score += balance_score * 0.25
+                score += balance_score * 0.10
             else:
                 # Fallback : calculer depuis la charge
                 if len(node_features) >= 5:
@@ -195,12 +207,12 @@ class StubModel:
                     cpu_balance = 1.0 - abs(cpu_load - 0.5) * 2
                     mem_balance = 1.0 - abs(mem_load - 0.5) * 2
                     balance_score = (cpu_balance + mem_balance) / 2.0
-                    score += balance_score * 0.25
+                    score += balance_score * 0.10
             
-            # 5. Pénalité de surcharge (10%)
+            # 6. Pénalité de surcharge (5%)
             if len(node_features) >= 8:
                 overload_penalty = node_features[7]
-                score += (1.0 - overload_penalty) * 0.10
+                score += (1.0 - overload_penalty) * 0.05
             
             scores.append(max(0.0, min(1.0, score)))  # Clamp entre 0 et 1
         
