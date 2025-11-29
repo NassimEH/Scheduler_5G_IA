@@ -5,7 +5,7 @@
 
 ---
 
-## 🚀 Démarrage rapide
+## Démarrage rapide
 
 ### Prérequis
 
@@ -88,7 +88,7 @@ chmod +x run_comparison.sh
 
 ---
 
-## 📖 Fonctionnement du projet
+## Fonctionnement du projet
 
 ### Architecture et workflow
 
@@ -153,7 +153,7 @@ Pour chaque scheduler, les métriques suivantes sont collectées :
 
 ---
 
-## 📁 Arborescence du projet
+## Arborescence du projet
 
 ```
 Scheduler_5G_IA/
@@ -621,7 +621,7 @@ python --version
 
 ### 4.2. Déploiement complet
 
-**⚠️ IMPORTANT** : Utilisez les scripts `setup_project.ps1` (Windows) ou `setup_project.sh` (Linux/Mac) qui automatisent toutes les étapes ci-dessous.
+**IMPORTANT** : Utilisez les scripts `setup_project.ps1` (Windows) ou `setup_project.sh` (Linux/Mac) qui automatisent toutes les étapes ci-dessous.
 
 #### Méthode automatique (recommandée)
 
@@ -833,7 +833,7 @@ Pour chaque scénario, les métriques sont collectées pendant la durée spécif
 - Écart-type CPU entre nœuds (déséquilibre CPU)
 - Écart-type mémoire entre nœuds (déséquilibre mémoire)
 
-**⚠️ Important** : Pour obtenir des résultats significatifs, augmentez la durée de collecte :
+**Important** : Pour obtenir des résultats significatifs, augmentez la durée de collecte :
 - **10 minutes** : ~20 points de données (minimum recommandé)
 - **15 minutes** : ~30 points de données
 - **30 minutes** : ~60 points de données (recommandé pour des résultats fiables)

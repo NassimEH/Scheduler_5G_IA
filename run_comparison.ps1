@@ -45,26 +45,26 @@ Write-Host "========================================`n" -ForegroundColor Cyan
 Write-Host "[1/6] Vérification de Prometheus..." -ForegroundColor Yellow
 try {
     $response = Invoke-WebRequest -Uri "$PrometheusUrl/api/v1/query?query=up" -UseBasicParsing -TimeoutSec 3
-    Write-Host "✅ Prometheus accessible" -ForegroundColor Green
+    Write-Host "[OK] Prometheus accessible" -ForegroundColor Green
 } catch {
-    Write-Host "⚠️  Prometheus non accessible, démarrage du port-forward..." -ForegroundColor Yellow
+    Write-Host "[ATTENTION] Prometheus non accessible, demarrage du port-forward..." -ForegroundColor Yellow
     Start-Process powershell -ArgumentList "-NoExit", "-Command", "kubectl port-forward -n monitoring svc/prometheus 9090:9090" -WindowStyle Minimized
     Start-Sleep -Seconds 5
-    Write-Host "✅ Port-forward démarré" -ForegroundColor Green
+    Write-Host "[OK] Port-forward demarre" -ForegroundColor Green
 }
 
 # Créer le namespace workloads si nécessaire
 Write-Host "`n[2/6] Préparation du namespace workloads..." -ForegroundColor Yellow
 kubectl create namespace workloads --dry-run=client -o yaml | kubectl apply -f - | Out-Null
-Write-Host "✅ Namespace prêt" -ForegroundColor Green
+Write-Host "[OK] Namespace pret" -ForegroundColor Green
 
 # Nettoyer les anciens workloads
 Write-Host "`n[3/6] Nettoyage des anciens workloads..." -ForegroundColor Yellow
 try {
     $null = python scheduler/testing/test_scenarios.py --cleanup --namespace workloads 2>&1 | Out-String
-    Write-Host "✅ Nettoyage terminé" -ForegroundColor Green
+    Write-Host "[OK] Nettoyage termine" -ForegroundColor Green
 } catch {
-    Write-Host "⚠️  Erreur lors du nettoyage (peut être ignorée)" -ForegroundColor Yellow
+    Write-Host "[ATTENTION] Erreur lors du nettoyage (peut etre ignoree)" -ForegroundColor Yellow
 }
 Start-Sleep -Seconds 3
 
@@ -76,10 +76,10 @@ Write-Host "========================================`n" -ForegroundColor Magenta
 Write-Host "[4/6] Création du scénario de test ($Scenario)..." -ForegroundColor Yellow
 python scheduler/testing/test_scenarios.py --scenario $Scenario --namespace workloads
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "❌ Erreur lors de la création du scénario" -ForegroundColor Red
+    Write-Host "[ERREUR] Erreur lors de la creation du scenario" -ForegroundColor Red
     exit 1
 }
-Write-Host "✅ Scénario créé" -ForegroundColor Green
+Write-Host "[OK] Scenario cree" -ForegroundColor Green
 
 Write-Host "`nAttente du déploiement des pods (30 secondes)..." -ForegroundColor Cyan
 Start-Sleep -Seconds 30
@@ -95,10 +95,10 @@ python scheduler/testing/compare_schedulers.py `
     --prometheus-url $PrometheusUrl
 
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "❌ Erreur lors de la collecte des métriques par défaut" -ForegroundColor Red
+    Write-Host "[ERREUR] Erreur lors de la collecte des metriques par defaut" -ForegroundColor Red
     exit 1
 }
-Write-Host "✅ Métriques collectées" -ForegroundColor Green
+Write-Host "[OK] Metriques collectees" -ForegroundColor Green
 
 # Nettoyer les workloads
 Write-Host "`nNettoyage des workloads..." -ForegroundColor Cyan
@@ -113,15 +113,15 @@ Write-Host "========================================`n" -ForegroundColor Magenta
 Write-Host "[5/6] Vérification de l'extender ML..." -ForegroundColor Yellow
 $extenderPod = kubectl get pods -n monitoring -l app=scheduler-extender -o jsonpath='{.items[0].metadata.name}' 2>$null
 if ($extenderPod) {
-    Write-Host "✅ Extender ML actif: $extenderPod" -ForegroundColor Green
+    Write-Host "[OK] Extender ML actif: $extenderPod" -ForegroundColor Green
 } else {
-    Write-Host "⚠️  Extender ML non trouvé. Assurez-vous qu'il est déployé." -ForegroundColor Yellow
+    Write-Host "[ATTENTION] Extender ML non trouve. Assurez-vous qu'il est deploye." -ForegroundColor Yellow
 }
 
 Write-Host "`nCréation du scénario de test ($Scenario)..." -ForegroundColor Cyan
 python scheduler/testing/test_scenarios.py --scenario $Scenario --namespace workloads
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "❌ Erreur lors de la création du scénario" -ForegroundColor Red
+    Write-Host "[ERREUR] Erreur lors de la creation du scenario" -ForegroundColor Red
     exit 1
 }
 
@@ -139,10 +139,10 @@ python scheduler/testing/compare_schedulers.py `
     --prometheus-url $PrometheusUrl
 
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "❌ Erreur lors de la collecte des métriques ML" -ForegroundColor Red
+    Write-Host "[ERREUR] Erreur lors de la collecte des metriques ML" -ForegroundColor Red
     exit 1
 }
-Write-Host "✅ Métriques collectées" -ForegroundColor Green
+Write-Host "[OK] Metriques collectees" -ForegroundColor Green
 
 # Nettoyer les workloads
 Write-Host "`nNettoyage des workloads..." -ForegroundColor Cyan
@@ -160,7 +160,7 @@ $defaultCsv = Get-ChildItem -Path $defaultOutput -Filter "metrics_*.csv" | Sort-
 $mlCsv = Get-ChildItem -Path $mlOutput -Filter "metrics_*.csv" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 
 if (-not $defaultCsv -or -not $mlCsv) {
-    Write-Host "❌ Fichiers CSV non trouvés" -ForegroundColor Red
+    Write-Host "[ERREUR] Fichiers CSV non trouves" -ForegroundColor Red
     Write-Host "   Default: $($defaultCsv.FullName)" -ForegroundColor Yellow
     Write-Host "   ML: $($mlCsv.FullName)" -ForegroundColor Yellow
     exit 1
@@ -181,12 +181,12 @@ python scheduler/testing/compare_schedulers.py `
     --prometheus-url $PrometheusUrl
 
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "❌ Erreur lors de la génération du rapport" -ForegroundColor Red
+    Write-Host "[ERREUR] Erreur lors de la generation du rapport" -ForegroundColor Red
     exit 1
 }
 
 Write-Host "`n========================================" -ForegroundColor Green
-Write-Host "  ✅ COMPARAISON TERMINÉE !" -ForegroundColor Green
+Write-Host "  [OK] COMPARAISON TERMINEE !" -ForegroundColor Green
 Write-Host "========================================`n" -ForegroundColor Green
 
 Write-Host "Résultats disponibles dans : $comparisonOutput" -ForegroundColor Cyan

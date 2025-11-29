@@ -23,10 +23,10 @@ echo ""
 # Vérifier Docker
 echo "[1/5] Vérification de Docker..."
 if ! docker ps > /dev/null 2>&1; then
-    echo "❌ Docker n'est pas démarré ou accessible"
+    echo "[ERREUR] Docker n'est pas demarre ou accessible"
     exit 1
 fi
-echo "✅ Docker fonctionne"
+echo "[OK] Docker fonctionne"
 
 # Construire les images Docker
 echo ""
@@ -35,32 +35,32 @@ echo "[2/5] Construction des images Docker..."
 echo "  - network-latency-exporter..."
 docker build -t network-latency-exporter:latest monitoring/network-latency-exporter/
 if [ $? -ne 0 ]; then
-    echo "❌ Erreur lors de la construction de network-latency-exporter"
+    echo "[ERREUR] Erreur lors de la construction de network-latency-exporter"
     exit 1
 fi
 
 echo "  - scheduler-inference..."
 docker build -t scheduler-inference:latest scheduler/inference/
 if [ $? -ne 0 ]; then
-    echo "❌ Erreur lors de la construction de scheduler-inference"
+    echo "[ERREUR] Erreur lors de la construction de scheduler-inference"
     exit 1
 fi
 
 echo "  - scheduler-extender..."
 docker build -t scheduler-extender:latest scheduler/extender/
 if [ $? -ne 0 ]; then
-    echo "❌ Erreur lors de la construction de scheduler-extender"
+    echo "[ERREUR] Erreur lors de la construction de scheduler-extender"
     exit 1
 fi
 
-echo "✅ Images construites"
+echo "[OK] Images construites"
 
 # Créer le cluster et déployer
 echo ""
 echo "[3/5] Création du cluster et déploiement..."
 "$SCRIPT_DIR/infra/bootstrap.sh"
 if [ $? -ne 0 ]; then
-    echo "❌ Erreur lors du bootstrap"
+    echo "[ERREUR] Erreur lors du bootstrap"
     exit 1
 fi
 
@@ -71,7 +71,7 @@ kind load docker-image network-latency-exporter:latest --name "$CLUSTER_NAME"
 kind load docker-image scheduler-inference:latest --name "$CLUSTER_NAME"
 kind load docker-image scheduler-extender:latest --name "$CLUSTER_NAME"
 
-echo "✅ Images chargées dans Kind"
+echo "[OK] Images chargees dans Kind"
 
 # Attendre que les pods soient prêts
 echo ""
@@ -84,7 +84,7 @@ kubectl get pods -n monitoring
 
 echo ""
 echo "========================================"
-echo "  ✅ CONFIGURATION TERMINÉE !"
+echo "  [OK] CONFIGURATION TERMINEE !"
 echo "========================================"
 echo ""
 

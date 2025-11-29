@@ -49,13 +49,13 @@ echo ""
 # Vérifier que Prometheus est accessible
 echo "[1/6] Vérification de Prometheus..."
 if curl -s --max-time 3 "${PROMETHEUS_URL}/api/v1/query?query=up" > /dev/null; then
-    echo "✅ Prometheus accessible"
+    echo "[OK] Prometheus accessible"
 else
-    echo "⚠️  Prometheus non accessible, démarrage du port-forward..."
+    echo "[ATTENTION] Prometheus non accessible, demarrage du port-forward..."
     kubectl port-forward -n monitoring svc/prometheus 9090:9090 &
     PORT_FORWARD_PID=$!
     sleep 5
-    echo "✅ Port-forward démarré (PID: $PORT_FORWARD_PID)"
+    echo "[OK] Port-forward demarre (PID: $PORT_FORWARD_PID)"
     trap "kill $PORT_FORWARD_PID 2>/dev/null" EXIT
 fi
 
@@ -63,13 +63,13 @@ fi
 echo ""
 echo "[2/6] Préparation du namespace workloads..."
 kubectl create namespace workloads --dry-run=client -o yaml | kubectl apply -f - > /dev/null
-echo "✅ Namespace prêt"
+echo "[OK] Namespace pret"
 
 # Nettoyer les anciens workloads
 echo ""
 echo "[3/6] Nettoyage des anciens workloads..."
 python scheduler/testing/test_scenarios.py --cleanup --namespace workloads 2>/dev/null || true
-echo "✅ Nettoyage terminé"
+echo "[OK] Nettoyage termine"
 sleep 3
 
 # ÉTAPE 1 : Collecte avec scheduler par défaut
@@ -82,10 +82,10 @@ echo ""
 echo "[4/6] Création du scénario de test ($SCENARIO)..."
 python scheduler/testing/test_scenarios.py --scenario "$SCENARIO" --namespace workloads
 if [ $? -ne 0 ]; then
-    echo "❌ Erreur lors de la création du scénario"
+    echo "[ERREUR] Erreur lors de la creation du scenario"
     exit 1
 fi
-echo "✅ Scénario créé"
+echo "[OK] Scenario cree"
 
 echo ""
 echo "Attente du déploiement des pods (30 secondes)..."
@@ -102,10 +102,10 @@ python scheduler/testing/compare_schedulers.py \
     --prometheus-url "$PROMETHEUS_URL"
 
 if [ $? -ne 0 ]; then
-    echo "❌ Erreur lors de la collecte des métriques par défaut"
+    echo "[ERREUR] Erreur lors de la collecte des metriques par defaut"
     exit 1
 fi
-echo "✅ Métriques collectées"
+echo "[OK] Metriques collectees"
 
 # Nettoyer les workloads
 echo ""
@@ -123,16 +123,16 @@ echo ""
 echo "[5/6] Vérification de l'extender ML..."
 EXTENDER_POD=$(kubectl get pods -n monitoring -l app=scheduler-extender -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 if [ -n "$EXTENDER_POD" ]; then
-    echo "✅ Extender ML actif: $EXTENDER_POD"
+    echo "[OK] Extender ML actif: $EXTENDER_POD"
 else
-    echo "⚠️  Extender ML non trouvé. Assurez-vous qu'il est déployé."
+    echo "[ATTENTION] Extender ML non trouve. Assurez-vous qu'il est deploye."
 fi
 
 echo ""
 echo "Création du scénario de test ($SCENARIO)..."
 python scheduler/testing/test_scenarios.py --scenario "$SCENARIO" --namespace workloads
 if [ $? -ne 0 ]; then
-    echo "❌ Erreur lors de la création du scénario"
+    echo "[ERREUR] Erreur lors de la creation du scenario"
     exit 1
 fi
 
@@ -151,10 +151,10 @@ python scheduler/testing/compare_schedulers.py \
     --prometheus-url "$PROMETHEUS_URL"
 
 if [ $? -ne 0 ]; then
-    echo "❌ Erreur lors de la collecte des métriques ML"
+    echo "[ERREUR] Erreur lors de la collecte des metriques ML"
     exit 1
 fi
-echo "✅ Métriques collectées"
+echo "[OK] Metriques collectees"
 
 # Nettoyer les workloads
 echo ""
@@ -175,7 +175,7 @@ DEFAULT_CSV=$(ls -t results_default/metrics_*.csv 2>/dev/null | head -n 1)
 ML_CSV=$(ls -t results_ml/metrics_*.csv 2>/dev/null | head -n 1)
 
 if [ -z "$DEFAULT_CSV" ] || [ -z "$ML_CSV" ]; then
-    echo "❌ Fichiers CSV non trouvés"
+    echo "[ERREUR] Fichiers CSV non trouves"
     echo "   Default: $DEFAULT_CSV"
     echo "   ML: $ML_CSV"
     exit 1
@@ -195,13 +195,13 @@ python scheduler/testing/compare_schedulers.py \
     --prometheus-url "$PROMETHEUS_URL"
 
 if [ $? -ne 0 ]; then
-    echo "❌ Erreur lors de la génération du rapport"
+    echo "[ERREUR] Erreur lors de la generation du rapport"
     exit 1
 fi
 
 echo ""
 echo "========================================"
-echo "  ✅ COMPARAISON TERMINÉE !"
+echo "  [OK] COMPARAISON TERMINEE !"
 echo "========================================"
 echo ""
 
