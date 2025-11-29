@@ -597,9 +597,56 @@ kubectl cp scheduler_model.pkl \
 
 ## 3. Architecture du système
 
-### 3.1. Composants déployés
+### 3.1. Infrastructure Kubernetes
 
-#### 3.1.1. Infrastructure de monitoring (namespace: `monitoring`)
+Le projet utilise un cluster Kind (Kubernetes in Docker) avec la configuration suivante :
+
+#### 3.1.1. Nodes Kubernetes
+
+**Total : 4 nodes**
+- **1 control-plane** : Nœud maître gérant l'API Kubernetes et le contrôle du cluster
+- **3 workers** : Nœuds de travail pour l'exécution des pods
+
+Cette configuration permet de tester efficacement le scheduler, la répartition de charge et les scénarios 5G avec plusieurs nœuds disponibles pour le placement des pods.
+
+#### 3.1.2. Pods déployés
+
+Le nombre total de pods varie selon le scénario de test utilisé :
+
+**Pods système (toujours déployés) : ~17 pods**
+
+- **Monitoring (namespace: `monitoring`) : ~15 pods**
+  - Prometheus : 1 pod (Deployment)
+  - Grafana : 1 pod (Deployment)
+  - kube-state-metrics : 1 pod (Deployment)
+  - node-exporter : 4 pods (DaemonSet, 1 par node)
+  - cAdvisor : 4 pods (DaemonSet, 1 par node)
+  - network-latency-exporter : 4 pods (DaemonSet, 1 par node)
+
+- **Scheduler intelligent (namespace: `kube-system`) : 2 pods**
+  - scheduler-extender : 1 pod (Deployment)
+  - inference-server : 1 pod (Deployment)
+
+**Pods workloads (variable selon le scénario) :**
+
+- **Minimum (workload de base) : 3 pods**
+  - upf-sim : 3 pods (Deployment)
+
+- **Scénarios de test :**
+  - `balanced` : 12 pods (3 UPF, 3 SMF, 3 CU, 3 DU)
+  - `high_latency` : 16 pods (8 UPF, 4 SMF, 2 CU, 2 DU)
+  - `resource_intensive` : 20 pods (5 de chaque type)
+  - `mixed` : 24 pods (6 de chaque type)
+
+**Total de pods :**
+- **Minimum** : ~20 pods (17 système + 3 workloads)
+- **Maximum (scénario `mixed`)** : ~41 pods (17 système + 24 workloads)
+
+**Note** : S'ajoutent également les pods système Kubernetes (kube-proxy, etc.) déployés automatiquement par Kind sur chaque node.
+
+### 3.2. Composants déployés
+
+#### 3.2.1. Infrastructure de monitoring (namespace: `monitoring`)
 
 **Prometheus** :
 - Collecte et stockage des métriques (rétention 15 jours)
@@ -619,7 +666,7 @@ kubectl cp scheduler_model.pkl \
   - Network Latency (matrice RTT)
   - Scheduler Comparison (comparaison des schedulers)
 
-#### 3.1.2. Scheduler intelligent (namespace: `kube-system`)
+#### 3.2.2. Scheduler intelligent (namespace: `kube-system`)
 
 **Scheduler Extender** (`scheduler-extender`) :
 - Service Flask exposant `/filter` et `/prioritize`
@@ -633,7 +680,7 @@ kubectl cp scheduler_model.pkl \
 - Extraction de features depuis Prometheus + Kubernetes API
 - Métriques Prometheus d'observabilité
 
-#### 3.1.3. Workloads 5G simulés (namespace: `workloads`)
+#### 3.2.3. Workloads 5G simulés (namespace: `workloads`)
 
 Simulation de fonctions réseau 5G avec contraintes spécifiques :
 
@@ -644,7 +691,7 @@ Simulation de fonctions réseau 5G avec contraintes spécifiques :
 | **CU** (Central Unit) | Contrôle RAN | Latence modérée |
 | **DU** (Distributed Unit) | Traitement radio | CPU intensif |
 
-### 3.2. Configuration du Scheduler Extender
+### 3.3. Configuration du Scheduler Extender
 
 Configuration ajoutée à kube-scheduler (`/etc/kubernetes/scheduler-extender-config.yaml`) :
 
@@ -665,7 +712,7 @@ extenders:
         ignoredByScheduler: false
 ```
 
-### 3.3. Network Latency Exporter
+### 3.4. Network Latency Exporter
 
 Exporter custom développé en Python pour mesurer la latence réseau entre pods :
 
