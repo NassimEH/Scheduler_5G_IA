@@ -1,23 +1,23 @@
 <#
-Script d'amorçage pour l'environnement de développement (PowerShell).
+Script d'amorcage pour l'environnement de developpement (PowerShell).
 
-Ce script réalise les opérations suivantes :
-- crée un cluster Kind (utilise infra/kind-config.yaml)
-- configure le contexte kubectl vers le cluster créé
-- déploie une stack monitoring complète (Prometheus + Grafana + exporters)
-- déploie un workload d'exemple (pods simulant UPF)
+Ce script realise les operations suivantes :
+- cree un cluster Kind (utilise infra/kind-config.yaml)
+- configure le contexte kubectl vers le cluster cree
+- deploie une stack monitoring complete (Prometheus + Grafana + exporters)
+- deploie un workload d'exemple (pods simulant UPF)
 
-Prérequis :
+Prerequis :
 - Docker en fonctionnement
-- kind (https://kind.sigs.k8s.io/) installé et accessible
-- kubectl installé et accessible
+- kind (https://kind.sigs.k8s.io/) installe et accessible
+- kubectl installe et accessible
 
 Usage :
     .\infra\bootstrap.ps1
 
 Remarques :
 - Les manifests monitoring sont maintenant complets avec node-exporter, cAdvisor, kube-state-metrics
-- L'exporter de latence réseau nécessite une image Docker buildée localement (voir README)
+- L'exporter de latence reseau necessite une image Docker buildee localement (voir README)
 #>
 
 param(
@@ -28,13 +28,13 @@ param(
 $ScriptDir = Split-Path -Path $MyInvocation.MyCommand.Definition -Parent
 $RootDir = Split-Path -Path $ScriptDir -Parent
 
-Write-Host "Création du cluster kind '$ClusterName'..."
+Write-Host "Creation du cluster kind '$ClusterName'..."
 kind create cluster --name $ClusterName --config "$ScriptDir\kind-config.yaml"
 
 Write-Host "Contexte kubectl : kind-$ClusterName"
 kubectl cluster-info --context "kind-$ClusterName"
 
-Write-Host "Déploiement de la stack monitoring (Prometheus + Grafana + exporters)..."
+Write-Host "Deploiement de la stack monitoring (Prometheus + Grafana + exporters)..."
 
 # ServiceAccount et RBAC pour Prometheus
 Write-Host "  - ServiceAccount Prometheus..."
@@ -55,9 +55,9 @@ kubectl apply -f "$RootDir\monitoring\cadvisor\cadvisor-daemonset.yaml"
 Write-Host "  - kube-state-metrics..."
 kubectl apply -f "$RootDir\monitoring\kube-state-metrics\kube-state-metrics-deployment.yaml"
 
-# Network Latency Exporter (nécessite une image buildée - voir README)
+# Network Latency Exporter (necessite une image buildee - voir README)
 Write-Host "  - network-latency-exporter..."
-Write-Host "    ATTENTION: L'image Docker doit être buildée avant le déploiement"
+Write-Host "    ATTENTION: L'image Docker doit etre buildee avant le deploiement"
 Write-Host "    Commande: docker build -t network-latency-exporter:latest monitoring/network-latency-exporter/"
 Write-Host "    Puis charger dans kind: kind load docker-image network-latency-exporter:latest --name $ClusterName"
 kubectl apply -f "$RootDir\monitoring\network-latency-exporter\network-latency-exporter-daemonset.yaml"
@@ -70,35 +70,35 @@ kubectl apply -f "$RootDir\monitoring\grafana\grafana-dashboards-configmap.yaml"
 kubectl apply -f "$RootDir\monitoring\grafana\grafana-deployment.yaml"
 
 # Scheduler IA (Phase 2)
-Write-Host "Déploiement du scheduler IA..."
-Write-Host "  - Serveur d'inférence..."
+Write-Host "Deploiement du scheduler IA..."
+Write-Host "  - Serveur d'inference..."
 kubectl apply -f "$RootDir\scheduler\inference\inference-deployment.yaml"
 
 Write-Host "  - Scheduler extender..."
 kubectl apply -f "$RootDir\scheduler\extender\extender-deployment.yaml"
 
-Write-Host "  ATTENTION: Les images Docker doivent être buildées avant le déploiement"
+Write-Host "  ATTENTION: Les images Docker doivent etre buildees avant le deploiement"
 Write-Host "    - scheduler-inference: docker build -t scheduler-inference:latest scheduler/inference/"
 Write-Host "    - scheduler-extender: docker build -t scheduler-extender:latest scheduler/extender/"
 Write-Host "    Puis charger dans kind:"
 Write-Host "      kind load docker-image scheduler-inference:latest --name $ClusterName"
 Write-Host "      kind load docker-image scheduler-extender:latest --name $ClusterName"
 
-Write-Host "Déploiement du workload d'exemple..."
+Write-Host "Deploiement du workload d'exemple..."
 kubectl apply -f "$RootDir\workloads\sample-workload.yaml"
 
 Write-Host ""
-Write-Host "Bootstrap terminé !"
+Write-Host "Bootstrap termine !"
 Write-Host ""
-Write-Host "Vérifiez les ressources avec :"
+Write-Host "Verifiez les ressources avec :"
 Write-Host "  kubectl get nodes"
 Write-Host "  kubectl get pods -n monitoring"
 Write-Host "  kubectl get pods -n workloads"
 Write-Host ""
-Write-Host "Accédez à Grafana :"
+Write-Host "Accedez a Grafana :"
 Write-Host "  kubectl port-forward -n monitoring svc/grafana 3000:3000"
 Write-Host "  Puis ouvrez http://localhost:3000 (admin/admin)"
 Write-Host ""
-Write-Host "Accédez à Prometheus :"
+Write-Host "Accedez a Prometheus :"
 Write-Host "  kubectl port-forward -n monitoring svc/prometheus 9090:9090"
 Write-Host "  Puis ouvrez http://localhost:9090"

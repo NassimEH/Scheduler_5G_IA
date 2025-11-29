@@ -122,7 +122,7 @@ class SchedulerModelTrainer:
             latency = row.get('network_latency_normalized', 0.5)
             # Amplifier l'impact de la latence : très faible latence = score très élevé
             latency_score = (1.0 - latency) ** 1.5  # Fonction exponentielle pour favoriser très faible latence
-            score += latency_score * 0.30  # 30% pour la latence (augmenté de 15%)
+            score += latency_score * 0.30  # 30% pour la latence
             
             # 3. Optimisation mémoire (20%) - Favoriser nodes avec moins de charge mémoire
             # Moins de charge mémoire = meilleur score

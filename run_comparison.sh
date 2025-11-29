@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Script bash pour exécuter la comparaison complète entre kube-scheduler et scheduler ML
+# Script bash pour executer la comparaison complete entre kube-scheduler et scheduler ML
 #
 # Usage:
 #   ./run_comparison.sh [--duration MINUTES] [--scenario SCENARIO]
@@ -10,9 +10,11 @@
 #   ./run_comparison.sh --duration 30 --scenario resource_intensive
 #
 
+# Mode strict : arreter le script en cas d'erreur
+# Mais on gere manuellement les erreurs Python pour eviter les faux positifs
 set -e
 
-# Paramètres par défaut
+# Parametres par defaut
 DURATION_MINUTES=10
 SCENARIO="balanced"
 PROMETHEUS_URL="http://localhost:9090"
@@ -46,8 +48,8 @@ echo "  COMPARAISON SCHEDULERS - WORKFLOW COMPLET"
 echo "========================================"
 echo ""
 
-# Vérifier que Prometheus est accessible
-echo "[1/6] Vérification de Prometheus..."
+# Verifier que Prometheus est accessible
+echo "[1/6] Verification de Prometheus..."
 if curl -s --max-time 3 "${PROMETHEUS_URL}/api/v1/query?query=up" > /dev/null; then
     echo "[OK] Prometheus accessible"
 else
@@ -59,9 +61,9 @@ else
     trap "kill $PORT_FORWARD_PID 2>/dev/null" EXIT
 fi
 
-# Créer le namespace workloads si nécessaire
+# Creer le namespace workloads si necessaire
 echo ""
-echo "[2/6] Préparation du namespace workloads..."
+echo "[2/6] Preparation du namespace workloads..."
 kubectl create namespace workloads --dry-run=client -o yaml | kubectl apply -f - > /dev/null
 echo "[OK] Namespace pret"
 
@@ -72,37 +74,43 @@ python scheduler/testing/test_scenarios.py --cleanup --namespace workloads 2>/de
 echo "[OK] Nettoyage termine"
 sleep 3
 
-# ÉTAPE 1 : Collecte avec scheduler par défaut
+# ETAPE 1 : Collecte avec scheduler par defaut
 echo ""
 echo "========================================"
-echo "  ÉTAPE 1 : SCHEDULER PAR DÉFAUT"
+echo "  ETAPE 1 : SCHEDULER PAR DEFAUT"
 echo "========================================"
 echo ""
 
-echo "[4/6] Création du scénario de test ($SCENARIO)..."
-python scheduler/testing/test_scenarios.py --scenario "$SCENARIO" --namespace workloads
-if [ $? -ne 0 ]; then
+echo "[4/6] Creation du scenario de test ($SCENARIO)..."
+PYTHON_OUTPUT=$(python scheduler/testing/test_scenarios.py --scenario "$SCENARIO" --namespace workloads 2>&1)
+PYTHON_EXIT_CODE=$?
+if [ $PYTHON_EXIT_CODE -ne 0 ]; then
     echo "[ERREUR] Erreur lors de la creation du scenario"
+    echo "$PYTHON_OUTPUT"
     exit 1
 fi
 echo "[OK] Scenario cree"
 
 echo ""
-echo "Attente du déploiement des pods (30 secondes)..."
+echo "Attente du deploiement des pods (30 secondes)..."
 sleep 30
 
 echo ""
-echo "Collecte des métriques du scheduler par défaut ($DURATION_MINUTES minutes)..."
+echo "Collecte des metriques du scheduler par defaut ($DURATION_MINUTES minutes)..."
 mkdir -p results_default
 
-python scheduler/testing/compare_schedulers.py \
+set +e  # Desactiver temporairement set -e pour cette commande
+PYTHON_OUTPUT=$(python scheduler/testing/compare_schedulers.py \
     --collect \
     --duration "$DURATION_MINUTES" \
     --output results_default \
-    --prometheus-url "$PROMETHEUS_URL"
+    --prometheus-url "$PROMETHEUS_URL" 2>&1)
+PYTHON_EXIT_CODE=$?
+set -e  # Reactiver set -e
 
-if [ $? -ne 0 ]; then
+if [ $PYTHON_EXIT_CODE -ne 0 ]; then
     echo "[ERREUR] Erreur lors de la collecte des metriques par defaut"
+    echo "$PYTHON_OUTPUT"
     exit 1
 fi
 echo "[OK] Metriques collectees"
@@ -113,14 +121,14 @@ echo "Nettoyage des workloads..."
 python scheduler/testing/test_scenarios.py --cleanup --namespace workloads 2>/dev/null || true
 sleep 10
 
-# ÉTAPE 2 : Collecte avec scheduler ML
+# ETAPE 2 : Collecte avec scheduler ML
 echo ""
 echo "========================================"
-echo "  ÉTAPE 2 : SCHEDULER ML"
+echo "  ETAPE 2 : SCHEDULER ML"
 echo "========================================"
 echo ""
 
-echo "[5/6] Vérification de l'extender ML..."
+echo "[5/6] Verification de l'extender ML..."
 EXTENDER_POD=$(kubectl get pods -n monitoring -l app=scheduler-extender -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 if [ -n "$EXTENDER_POD" ]; then
     echo "[OK] Extender ML actif: $EXTENDER_POD"
@@ -129,29 +137,37 @@ else
 fi
 
 echo ""
-echo "Création du scénario de test ($SCENARIO)..."
-python scheduler/testing/test_scenarios.py --scenario "$SCENARIO" --namespace workloads
-if [ $? -ne 0 ]; then
+echo "Creation du scenario de test ($SCENARIO)..."
+set +e  # Desactiver temporairement set -e pour cette commande
+PYTHON_OUTPUT=$(python scheduler/testing/test_scenarios.py --scenario "$SCENARIO" --namespace workloads 2>&1)
+PYTHON_EXIT_CODE=$?
+set -e  # Reactiver set -e
+if [ $PYTHON_EXIT_CODE -ne 0 ]; then
     echo "[ERREUR] Erreur lors de la creation du scenario"
+    echo "$PYTHON_OUTPUT"
     exit 1
 fi
 
 echo ""
-echo "Attente du déploiement des pods (30 secondes)..."
+echo "Attente du deploiement des pods (30 secondes)..."
 sleep 30
 
 echo ""
-echo "Collecte des métriques du scheduler ML ($DURATION_MINUTES minutes)..."
+echo "Collecte des metriques du scheduler ML ($DURATION_MINUTES minutes)..."
 mkdir -p results_ml
 
-python scheduler/testing/compare_schedulers.py \
+set +e  # Desactiver temporairement set -e pour cette commande
+PYTHON_OUTPUT=$(python scheduler/testing/compare_schedulers.py \
     --collect \
     --duration "$DURATION_MINUTES" \
     --output results_ml \
-    --prometheus-url "$PROMETHEUS_URL"
+    --prometheus-url "$PROMETHEUS_URL" 2>&1)
+PYTHON_EXIT_CODE=$?
+set -e  # Reactiver set -e
 
-if [ $? -ne 0 ]; then
+if [ $PYTHON_EXIT_CODE -ne 0 ]; then
     echo "[ERREUR] Erreur lors de la collecte des metriques ML"
+    echo "$PYTHON_OUTPUT"
     exit 1
 fi
 echo "[OK] Metriques collectees"
@@ -161,14 +177,14 @@ echo ""
 echo "Nettoyage des workloads..."
 python scheduler/testing/test_scenarios.py --cleanup --namespace workloads 2>/dev/null || true
 
-# ÉTAPE 3 : Comparaison
+# ETAPE 3 : Comparaison
 echo ""
 echo "========================================"
-echo "  ÉTAPE 3 : COMPARAISON ET GRAPHIQUES"
+echo "  ETAPE 3 : COMPARAISON ET GRAPHIQUES"
 echo "========================================"
 echo ""
 
-echo "[6/6] Génération des graphiques de comparaison..."
+echo "[6/6] Generation des graphiques de comparaison..."
 
 # Trouver les fichiers CSV
 DEFAULT_CSV=$(ls -t results_default/metrics_*.csv 2>/dev/null | head -n 1)
@@ -181,21 +197,25 @@ if [ -z "$DEFAULT_CSV" ] || [ -z "$ML_CSV" ]; then
     exit 1
 fi
 
-echo "Fichiers trouvés:"
+echo "Fichiers trouves:"
 echo "  Default: $(basename "$DEFAULT_CSV")"
 echo "  ML: $(basename "$ML_CSV")"
 
-# Générer le rapport de comparaison
+# Generer le rapport de comparaison
 mkdir -p comparison_results
 
-python scheduler/testing/compare_schedulers.py \
+set +e  # Desactiver temporairement set -e pour cette commande
+PYTHON_OUTPUT=$(python scheduler/testing/compare_schedulers.py \
     --default-data "$DEFAULT_CSV" \
     --ml-data "$ML_CSV" \
     --output comparison_results \
-    --prometheus-url "$PROMETHEUS_URL"
+    --prometheus-url "$PROMETHEUS_URL" 2>&1)
+PYTHON_EXIT_CODE=$?
+set -e  # Reactiver set -e
 
-if [ $? -ne 0 ]; then
+if [ $PYTHON_EXIT_CODE -ne 0 ]; then
     echo "[ERREUR] Erreur lors de la generation du rapport"
+    echo "$PYTHON_OUTPUT"
     exit 1
 fi
 
@@ -205,9 +225,9 @@ echo "  [OK] COMPARAISON TERMINEE !"
 echo "========================================"
 echo ""
 
-echo "Résultats disponibles dans : comparison_results"
+echo "Resultats disponibles dans : comparison_results"
 echo ""
-echo "Fichiers générés :"
+echo "Fichiers generes :"
 ls -1 comparison_results/
 
 echo ""

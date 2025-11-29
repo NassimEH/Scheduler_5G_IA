@@ -1,10 +1,10 @@
 #!/bin/bash
 #
-# Script de nettoyage pour supprimer les métriques, résultats et fichiers temporaires.
+# Script de nettoyage pour supprimer les metriques, resultats et fichiers temporaires.
 #
 # Usage:
-#   ./cleanup.sh              # Supprime tous les fichiers temporaires et résultats
-#   ./cleanup.sh --keep-models # Supprime les résultats mais conserve les modèles ML
+#   ./cleanup.sh              # Supprime tous les fichiers temporaires et resultats
+#   ./cleanup.sh --keep-models # Supprime les resultats mais conserve les modeles ML
 #
 
 set -e
@@ -39,7 +39,7 @@ remove_directory() {
         local size_mb=$(echo "scale=2; $size / 1024 / 1024" | bc 2>/dev/null || echo "0")
         
         if rm -rf "$path" 2>/dev/null; then
-            echo "[OK] $description supprimé (${size_mb} MB)"
+            echo "[OK] $description supprime (${size_mb} MB)"
             DELETED_COUNT=$((DELETED_COUNT + 1))
             TOTAL_SIZE=$((TOTAL_SIZE + size))
         else
@@ -60,7 +60,7 @@ remove_file() {
         local size_kb=$(echo "scale=2; $size / 1024" | bc 2>/dev/null || echo "0")
         
         if rm -f "$path" 2>/dev/null; then
-            echo "[OK] $description supprimé (${size_kb} KB)"
+            echo "[OK] $description supprime (${size_kb} KB)"
             DELETED_COUNT=$((DELETED_COUNT + 1))
             TOTAL_SIZE=$((TOTAL_SIZE + size))
         else
@@ -71,27 +71,27 @@ remove_file() {
     fi
 }
 
-# Supprimer les dossiers de résultats
+# Supprimer les dossiers de resultats
 echo ""
-echo "Suppression des dossiers de résultats..."
-remove_directory "results_default" "Résultats scheduler par défaut"
-remove_directory "results_ml" "Résultats scheduler ML"
-remove_directory "comparison_results" "Résultats de comparaison"
+echo "Suppression des dossiers de resultats..."
+remove_directory "results_default" "Resultats scheduler par defaut"
+remove_directory "results_ml" "Resultats scheduler ML"
+remove_directory "comparison_results" "Resultats de comparaison"
 remove_directory "img" "Ancien dossier img"
 
-# Supprimer les fichiers de données d'entraînement
+# Supprimer les fichiers de donnees d'entrainement
 echo ""
-echo "Suppression des fichiers de données..."
-remove_file "training_data.csv" "Données d'entraînement"
+echo "Suppression des fichiers de donnees..."
+remove_file "training_data.csv" "Donnees d'entrainement"
 
-# Supprimer les modèles ML (optionnel)
+# Supprimer les modeles ML (optionnel)
 if [ "$KEEP_MODELS" = false ]; then
     echo ""
-    echo "Suppression des modèles ML..."
+    echo "Suppression des modeles ML..."
     if [ -d "scheduler/models" ]; then
         for model in scheduler/models/*.pkl; do
             if [ -f "$model" ]; then
-                remove_file "$model" "Modèle ML: $(basename "$model")"
+                remove_file "$model" "Modele ML: $(basename "$model")"
             fi
         done
     else
@@ -99,17 +99,17 @@ if [ "$KEEP_MODELS" = false ]; then
     fi
 else
     echo ""
-    echo "[SKIP] Conservation des modèles ML (--keep-models)"
+    echo "[SKIP] Conservation des modeles ML (--keep-models)"
 fi
 
-# Résumé
+# Resume
 echo ""
 echo "========================================"
-echo "  NETTOYAGE TERMINÉ"
+echo "  NETTOYAGE TERMINE"
 echo "========================================"
 echo ""
-echo "Fichiers/dossiers supprimés : $DELETED_COUNT"
+echo "Fichiers/dossiers supprimes : $DELETED_COUNT"
 TOTAL_SIZE_MB=$(echo "scale=2; $TOTAL_SIZE / 1024 / 1024" | bc 2>/dev/null || echo "0")
-echo "Espace libéré : ${TOTAL_SIZE_MB} MB"
+echo "Espace libere : ${TOTAL_SIZE_MB} MB"
 echo ""
 
