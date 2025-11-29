@@ -51,7 +51,8 @@ class FeatureExtractor:
         self,
         node: Any,  # NodeInfo
         pod: Any,   # PodInfo
-        existing_pods: Optional[List[Dict[str, Any]]] = None
+        existing_pods: Optional[List[Dict[str, Any]]] = None,
+        all_nodes: Optional[List[Any]] = None  # Nouveau : tous les nodes pour calculer l'équilibre
     ) -> List[float]:
         """
         Extrait les features pour un node donné.
@@ -60,6 +61,7 @@ class FeatureExtractor:
             node: Informations sur le node
             pod: Informations sur le pod à placer
             existing_pods: Liste des pods existants pour contexte
+            all_nodes: Liste de tous les nodes pour calculer l'équilibre global
         
         Returns:
             Liste de features numériques
@@ -94,15 +96,42 @@ class FeatureExtractor:
         pod_density = self._get_node_pod_density(node.name)
         features.append(pod_density)
         
-        # 6. Compatibilité avec les labels du pod
+        # 6. NOUVEAU : Score d'équilibre global (plus le node est proche de la moyenne, mieux c'est)
+        if all_nodes and len(all_nodes) > 1:
+            # Calculer la charge moyenne du cluster
+            cluster_cpu_loads = []
+            cluster_mem_loads = []
+            for n in all_nodes:
+                n_cpu_load = self._get_node_cpu_load(n.name) if hasattr(n, 'name') else 0.0
+                n_mem_load = self._get_node_memory_load(n.name) if hasattr(n, 'name') else 0.0
+                cluster_cpu_loads.append(n_cpu_load)
+                cluster_mem_loads.append(n_mem_load)
+            
+            avg_cpu_load = sum(cluster_cpu_loads) / len(cluster_cpu_loads) if cluster_cpu_loads else 0.5
+            avg_mem_load = sum(cluster_mem_loads) / len(cluster_mem_loads) if cluster_mem_loads else 0.5
+            
+            # Score d'équilibre : plus proche de la moyenne = meilleur (pénalise les extrêmes)
+            cpu_balance_score = 1.0 - abs(cpu_load - avg_cpu_load)  # Plus proche = meilleur
+            mem_balance_score = 1.0 - abs(memory_load - avg_mem_load)
+            balance_score = (cpu_balance_score + mem_balance_score) / 2.0
+        else:
+            balance_score = 0.5  # Neutre si pas assez de données
+        
+        features.append(balance_score)
+        
+        # 7. NOUVEAU : Pénalité pour surcharge (charge élevée = pénalité)
+        overload_penalty = max(0.0, (cpu_load + memory_load) / 2.0 - 0.7)  # Pénalité si > 70% de charge
+        features.append(overload_penalty)
+        
+        # 8. Compatibilité avec les labels du pod
         label_compatibility = self._calculate_label_compatibility(node.labels, pod.labels)
         features.append(label_compatibility)
         
-        # 7. Type de pod (encodage one-hot simplifié)
+        # 9. Type de pod (encodage one-hot simplifié)
         pod_type_score = self._get_pod_type_score(pod.pod_type)
         features.append(pod_type_score)
         
-        # 8. Nombre de pods du même type sur le node
+        # 10. Nombre de pods du même type sur le node
         same_type_pods = self._count_same_type_pods(node.name, pod.pod_type, existing_pods)
         features.append(same_type_pods / 10.0)  # Normaliser
         
@@ -224,6 +253,8 @@ class FeatureExtractor:
             'cpu_load_avg',
             'memory_load_avg',
             'pod_density',
+            'balance_score',  # NOUVEAU : score d'équilibre global
+            'overload_penalty',  # NOUVEAU : pénalité pour surcharge
             'label_compatibility',
             'pod_type_score',
             'same_type_pods_count'

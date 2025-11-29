@@ -139,14 +139,35 @@ class ExtenderServer:
             prediction = response.json()
             
             # Convertir les scores en format attendu par Kubernetes
+            # Amplifier les différences pour mieux distinguer les nodes
+            node_scores_raw = prediction['node_scores']
+            if not node_scores_raw:
+                return self._default_prioritization(nodes)
+            
+            # Normaliser et amplifier les scores
+            max_score = max(node_scores_raw.values()) if node_scores_raw.values() else 1.0
+            min_score = min(node_scores_raw.values()) if node_scores_raw.values() else 0.0
+            score_range = max_score - min_score if max_score > min_score else 1.0
+            
             host_priorities = []
             for node in nodes:
                 node_name = node.get('metadata', {}).get('name')
-                score = int(prediction['node_scores'].get(node_name, 0) * 10)  # Scale 0-10
+                raw_score = node_scores_raw.get(node_name, 0.0)
+                
+                # Normaliser entre 0 et 1
+                if score_range > 0:
+                    normalized = (raw_score - min_score) / score_range
+                else:
+                    normalized = 0.5
+                
+                # Amplifier : utiliser une fonction exponentielle pour créer plus de différences
+                # Score final entre 0 et 10, avec amplification des meilleurs scores
+                amplified_score = normalized ** 0.7  # Exposant < 1 pour amplifier les différences
+                final_score = int(amplified_score * 10)
                 
                 host_priorities.append({
                     'host': node_name,
-                    'score': score
+                    'score': final_score
                 })
             
             logger.info(f"Priorisation terminée pour {len(host_priorities)} nodes")

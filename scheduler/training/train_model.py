@@ -85,31 +85,57 @@ class SchedulerModelTrainer:
         Pour un bon placement, on veut :
         - Plus de ressources disponibles (CPU, mémoire)
         - Moins de latence réseau
-        - Meilleur équilibre de charge
+        - Meilleur équilibre de charge (PRIORITÉ ÉLEVÉE)
+        - Moins de surcharge
         """
         scores = []
         
+        # Calculer la charge moyenne du cluster pour le balance_score
+        avg_cpu_load_cluster = df['cpu_load_avg'].mean()
+        avg_memory_load_cluster = df['memory_load_avg'].mean()
+
         for _, row in df.iterrows():
             score = 0.0
             
-            # Score basé sur les ressources disponibles (40%)
-            cpu_ratio = row.get('cpu_available_ratio', 0.5)
-            mem_ratio = row.get('memory_available_ratio', 0.5)
-            score += (cpu_ratio * 0.2 + mem_ratio * 0.2)
-            
-            # Score basé sur la latence (30%) - moins de latence = meilleur
-            latency = row.get('network_latency_normalized', 0.5)
-            score += (1.0 - latency) * 0.3
-            
-            # Score basé sur l'équilibre de charge (20%)
-            # Moins de charge = meilleur
             cpu_load = row.get('cpu_load_avg', 0.5)
             mem_load = row.get('memory_load_avg', 0.5)
-            score += (1.0 - (cpu_load + mem_load) / 2.0) * 0.2
+            cpu_ratio = row.get('cpu_available_ratio', 0.5)
+            mem_ratio = row.get('memory_available_ratio', 0.5)
             
-            # Score basé sur la densité de pods (10%) - moins de pods = meilleur
-            pod_density = row.get('pod_density', 0.5)
-            score += (1.0 - pod_density) * 0.1
+            # 1. NOUVEAU : Score d'optimisation CPU (30% - PRIORITÉ ÉLEVÉE)
+            # Favoriser les nodes avec une bonne utilisation CPU (zone optimale 40-70%)
+            cpu_usage_score = 0.0
+            if 0.4 <= cpu_load <= 0.7:
+                # Zone optimale : score maximal
+                cpu_usage_score = 1.0
+            elif cpu_load < 0.4:
+                # Sous-utilisation : pénalité progressive
+                cpu_usage_score = cpu_load / 0.4  # 0 à 1.0
+            else:  # cpu_load > 0.7
+                # Sur-utilisation : pénalité forte
+                cpu_usage_score = max(0.0, 1.0 - (cpu_load - 0.7) * 3.33)  # Décroît rapidement
+            
+            score += cpu_usage_score * 0.30  # 30% pour l'optimisation CPU
+            
+            # 2. Score basé sur les ressources disponibles (20% - réduit)
+            score += (cpu_ratio * 0.10 + mem_ratio * 0.10)  # Total 20%
+            
+            # 3. Score basé sur la latence (15% - réduit)
+            latency = row.get('network_latency_normalized', 0.5)
+            score += (1.0 - latency) * 0.15
+            
+            # 4. Score basé sur l'équilibre de charge (25% - réduit)
+            balance_score = row.get('balance_score', None)
+            if balance_score is None:
+                cpu_balance_penalty = abs(cpu_load - avg_cpu_load_cluster)
+                mem_balance_penalty = abs(mem_load - avg_memory_load_cluster)
+                balance_score = 1.0 - ((cpu_balance_penalty + mem_balance_penalty) / 2.0)
+            
+            score += balance_score * 0.25  # Réduit de 35% à 25%
+            
+            # 5. Pénalité de surcharge (10% - réduit)
+            overload_penalty = row.get('overload_penalty', 0.0)
+            score += (1.0 - overload_penalty) * 0.10  # Réduit de 15% à 10%
             
             scores.append(max(0.0, min(1.0, score)))
         

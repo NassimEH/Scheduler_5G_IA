@@ -156,12 +156,13 @@ async def predict(request: PredictionRequest):
             )
         
         # Extraire les features pour chaque node candidat
+        # Passer tous les nodes pour calculer l'équilibre global
         node_features = []
         node_names = []
         
         for node in request.candidate_nodes:
             features = feature_extractor.extract_node_features(
-                node, request.pod, request.existing_pods
+                node, request.pod, request.existing_pods, request.candidate_nodes
             )
             node_features.append(features)
             node_names.append(node.name)
@@ -193,28 +194,59 @@ def _default_heuristic(request: PredictionRequest) -> PredictionResponse:
     """
     Heuristique par défaut si le modèle n'est pas disponible.
     Priorise les nodes avec :
-    1. Plus de ressources disponibles
-    2. Moins de latence réseau (si disponible)
-    3. Meilleur équilibre de charge
+    1. Optimisation CPU (zone optimale 40-70%)
+    2. Plus de ressources disponibles
+    3. Moins de latence réseau
+    4. Meilleur équilibre de charge
     """
     node_scores = {}
     
+    # Pour l'heuristique, calculer la charge moyenne du cluster
+    all_cpu_loads = [feature_extractor._get_node_cpu_load(node.name) for node in request.candidate_nodes]
+    all_memory_loads = [feature_extractor._get_node_memory_load(node.name) for node in request.candidate_nodes]
+    
+    avg_cpu_load_cluster = sum(all_cpu_loads) / len(all_cpu_loads) if all_cpu_loads else 0.5
+    avg_memory_load_cluster = sum(all_memory_loads) / len(all_memory_loads) if all_memory_loads else 0.5
+
     for node in request.candidate_nodes:
         score = 0.0
         
-        # Score basé sur les ressources disponibles (normalisé)
         cpu_ratio = node.cpu_available / node.cpu_capacity if node.cpu_capacity > 0 else 0
         memory_ratio = node.memory_available / node.memory_capacity if node.memory_capacity > 0 else 0
         
-        # Poids : 40% CPU, 40% mémoire, 20% latence
-        score += cpu_ratio * 0.4
-        score += memory_ratio * 0.4
+        # 1. Optimisation CPU (30% - PRIORITÉ)
+        node_cpu_load = feature_extractor._get_node_cpu_load(node.name)
+        cpu_usage_score = 0.0
+        if 0.4 <= node_cpu_load <= 0.7:
+            cpu_usage_score = 1.0  # Zone optimale
+        elif node_cpu_load < 0.4:
+            cpu_usage_score = node_cpu_load / 0.4  # Sous-utilisation
+        else:  # > 0.7
+            cpu_usage_score = max(0.0, 1.0 - (node_cpu_load - 0.7) * 3.33)  # Sur-utilisation
         
-        # Bonus pour faible latence (si disponible)
+        score += cpu_usage_score * 0.30
+        
+        # 2. Ressources disponibles (20%)
+        score += cpu_ratio * 0.10
+        score += memory_ratio * 0.10
+        
+        # 3. Latence (15%)
         if node.network_latency is not None:
-            # Normaliser la latence (assume max 100ms, inverse pour avoir plus = mieux)
             latency_score = max(0, 1 - (node.network_latency / 100.0))
-            score += latency_score * 0.2
+            score += latency_score * 0.15
+        
+        # 4. Équilibre de charge (25%)
+        node_memory_load = feature_extractor._get_node_memory_load(node.name)
+        cpu_balance_penalty = abs(node_cpu_load - avg_cpu_load_cluster)
+        mem_balance_penalty = abs(node_memory_load - avg_memory_load_cluster)
+        balance_score = 1.0 - ((cpu_balance_penalty + mem_balance_penalty) / 2.0)
+        score += balance_score * 0.25
+        
+        # 5. Pénalité de surcharge (10%)
+        overload_penalty = 0.0
+        if node_cpu_load > 0.7 or node_memory_load > 0.7:
+            overload_penalty = 1.0
+        score += (1.0 - overload_penalty) * 0.10
         
         node_scores[node.name] = score
     
@@ -223,8 +255,9 @@ def _default_heuristic(request: PredictionRequest) -> PredictionResponse:
     return PredictionResponse(
         node_scores=node_scores,
         recommended_node=recommended_node,
-        model_version="default-heuristic-v1",
-        features_used=["cpu_available_ratio", "memory_available_ratio", "network_latency"]
+        model_version="default-heuristic-v3",
+        features_used=["cpu_usage_optimization", "cpu_available_ratio", "memory_available_ratio", 
+                       "network_latency", "balance_score", "overload_penalty"]
     )
 
 

@@ -77,30 +77,44 @@ class SchedulerComparator:
         Returns:
             DataFrame avec les métriques collectées
         """
-        logger.info(f"Collecte des métriques pendant {duration_minutes} minutes...")
+        logger.info(f"Collecte des métriques pendant {duration_minutes} minutes (intervalle: {interval_seconds}s)...")
         
-        end_time = datetime.now()
-        start_time = end_time - timedelta(minutes=duration_minutes)
-        current_time = start_time
+        start_time = datetime.now()
+        end_time = start_time + timedelta(minutes=duration_minutes)
         
         records = []
+        iteration = 0
         
-        while current_time < end_time:
+        while datetime.now() < end_time:
             try:
-                # Collecter les métriques à ce moment
+                current_time = datetime.now()
+                iteration += 1
+                
+                # Collecter les métriques au moment actuel
                 metrics = self._collect_metrics_at_time(current_time)
                 if metrics:
                     records.append(metrics)
+                    logger.info(f"Collecte #{iteration}: {len(records)} points collectés (temps restant: {(end_time - current_time).total_seconds() / 60:.1f} min)")
+                else:
+                    logger.warning(f"Collecte #{iteration}: Aucune métrique collectée")
                 
-                time.sleep(interval_seconds)
-                current_time = datetime.now()
+                # Calculer le temps de sommeil jusqu'à la prochaine collecte
+                sleep_time = interval_seconds
+                next_collect_time = current_time + timedelta(seconds=interval_seconds)
+                if next_collect_time > end_time:
+                    # Si la prochaine collecte serait après la fin, on arrête
+                    break
+                
+                time.sleep(sleep_time)
+                
             except KeyboardInterrupt:
                 logger.info("Collecte interrompue par l'utilisateur")
                 break
             except Exception as e:
                 logger.error(f"Erreur lors de la collecte: {e}")
                 time.sleep(interval_seconds)
-                current_time = datetime.now()
+        
+        logger.info(f"Collecte terminée: {len(records)} points collectés sur {iteration} itérations")
         
         df = pd.DataFrame(records)
         if not df.empty:
@@ -359,31 +373,54 @@ class SchedulerComparator:
         """Génère le graphique de comparaison CPU"""
         fig, ax = plt.subplots(figsize=(12, 6))
         
-        if not df_default.empty:
-            ax.plot(
-                df_default['timestamp'],
-                df_default['cpu_usage_avg'] * 100,
-                label='kube-scheduler (par défaut)',
-                marker='o',
-                markersize=3
-            )
+        has_data = False
+        default_value = None
+        ml_value = None
         
-        if not df_ml.empty:
-            ax.plot(
-                df_ml['timestamp'],
-                df_ml['cpu_usage_avg'] * 100,
-                label='Scheduler ML',
-                marker='s',
-                markersize=3
-            )
+        if not df_default.empty and len(df_default) > 0:
+            default_value = df_default['cpu_usage_avg'].mean() * 100
+            has_data = True
         
-        ax.set_xlabel('Temps')
-        ax.set_ylabel('Utilisation CPU (%)')
-        ax.set_title('Comparaison de l\'utilisation CPU')
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-        ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
-        plt.xticks(rotation=45)
+        if not df_ml.empty and len(df_ml) > 0:
+            ml_value = df_ml['cpu_usage_avg'].mean() * 100
+            has_data = True
+        
+        if not has_data:
+            ax.text(0.5, 0.5, 'Aucune donnée disponible', 
+                   ha='center', va='center', transform=ax.transAxes, fontsize=14)
+        else:
+            # Créer un graphique en barres
+            schedulers = []
+            values = []
+            colors = []
+            
+            if default_value is not None:
+                schedulers.append('kube-scheduler\n(par défaut)')
+                values.append(default_value)
+                colors.append('#3498db')
+            
+            if ml_value is not None:
+                schedulers.append('Scheduler ML')
+                values.append(ml_value)
+                colors.append('#e67e22')
+            
+            bars = ax.bar(schedulers, values, color=colors, alpha=0.7, edgecolor='black', linewidth=1.5)
+            
+            # Ajouter les valeurs sur les barres
+            for bar, value in zip(bars, values):
+                height = bar.get_height()
+                ax.text(bar.get_x() + bar.get_width()/2., height,
+                       f'{value:.2f}%',
+                       ha='center', va='bottom', fontsize=11, fontweight='bold')
+            
+            # Ajuster les limites Y
+            if values:
+                max_val = max(values)
+                ax.set_ylim([0, max_val * 1.15])
+        
+        ax.set_ylabel('Utilisation CPU (%)', fontsize=12)
+        ax.set_title('Comparaison de l\'utilisation CPU', fontsize=14, fontweight='bold')
+        ax.grid(True, alpha=0.3, axis='y')
         plt.tight_layout()
         
         plt.savefig(f'{output_dir}/cpu_comparison.png', dpi=300, bbox_inches='tight')
@@ -398,31 +435,54 @@ class SchedulerComparator:
         """Génère le graphique de comparaison mémoire"""
         fig, ax = plt.subplots(figsize=(12, 6))
         
-        if not df_default.empty:
-            ax.plot(
-                df_default['timestamp'],
-                df_default['memory_usage_avg'] * 100,
-                label='kube-scheduler (par défaut)',
-                marker='o',
-                markersize=3
-            )
+        has_data = False
+        default_value = None
+        ml_value = None
         
-        if not df_ml.empty:
-            ax.plot(
-                df_ml['timestamp'],
-                df_ml['memory_usage_avg'] * 100,
-                label='Scheduler ML',
-                marker='s',
-                markersize=3
-            )
+        if not df_default.empty and len(df_default) > 0:
+            default_value = df_default['memory_usage_avg'].mean() * 100
+            has_data = True
         
-        ax.set_xlabel('Temps')
-        ax.set_ylabel('Utilisation Mémoire (%)')
-        ax.set_title('Comparaison de l\'utilisation mémoire')
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-        ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
-        plt.xticks(rotation=45)
+        if not df_ml.empty and len(df_ml) > 0:
+            ml_value = df_ml['memory_usage_avg'].mean() * 100
+            has_data = True
+        
+        if not has_data:
+            ax.text(0.5, 0.5, 'Aucune donnée disponible', 
+                   ha='center', va='center', transform=ax.transAxes, fontsize=14)
+        else:
+            # Créer un graphique en barres
+            schedulers = []
+            values = []
+            colors = []
+            
+            if default_value is not None:
+                schedulers.append('kube-scheduler\n(par défaut)')
+                values.append(default_value)
+                colors.append('#3498db')
+            
+            if ml_value is not None:
+                schedulers.append('Scheduler ML')
+                values.append(ml_value)
+                colors.append('#e67e22')
+            
+            bars = ax.bar(schedulers, values, color=colors, alpha=0.7, edgecolor='black', linewidth=1.5)
+            
+            # Ajouter les valeurs sur les barres
+            for bar, value in zip(bars, values):
+                height = bar.get_height()
+                ax.text(bar.get_x() + bar.get_width()/2., height,
+                       f'{value:.2f}%',
+                       ha='center', va='bottom', fontsize=11, fontweight='bold')
+            
+            # Ajuster les limites Y
+            if values:
+                max_val = max(values)
+                ax.set_ylim([0, max_val * 1.15])
+        
+        ax.set_ylabel('Utilisation Mémoire (%)', fontsize=12)
+        ax.set_title('Comparaison de l\'utilisation mémoire', fontsize=14, fontweight='bold')
+        ax.grid(True, alpha=0.3, axis='y')
         plt.tight_layout()
         
         plt.savefig(f'{output_dir}/memory_comparison.png', dpi=300, bbox_inches='tight')
@@ -437,31 +497,54 @@ class SchedulerComparator:
         """Génère le graphique de comparaison latence"""
         fig, ax = plt.subplots(figsize=(12, 6))
         
-        if not df_default.empty:
-            ax.plot(
-                df_default['timestamp'],
-                df_default['network_latency_avg'],
-                label='kube-scheduler (par défaut)',
-                marker='o',
-                markersize=3
-            )
+        has_data = False
+        default_value = None
+        ml_value = None
         
-        if not df_ml.empty:
-            ax.plot(
-                df_ml['timestamp'],
-                df_ml['network_latency_avg'],
-                label='Scheduler ML',
-                marker='s',
-                markersize=3
-            )
+        if not df_default.empty and len(df_default) > 0:
+            default_value = df_default['network_latency_avg'].mean()
+            has_data = True
         
-        ax.set_xlabel('Temps')
-        ax.set_ylabel('Latence réseau (ms)')
-        ax.set_title('Comparaison de la latence réseau')
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-        ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
-        plt.xticks(rotation=45)
+        if not df_ml.empty and len(df_ml) > 0:
+            ml_value = df_ml['network_latency_avg'].mean()
+            has_data = True
+        
+        if not has_data:
+            ax.text(0.5, 0.5, 'Aucune donnée disponible', 
+                   ha='center', va='center', transform=ax.transAxes, fontsize=14)
+        else:
+            # Créer un graphique en barres
+            schedulers = []
+            values = []
+            colors = []
+            
+            if default_value is not None:
+                schedulers.append('kube-scheduler\n(par défaut)')
+                values.append(default_value)
+                colors.append('#3498db')
+            
+            if ml_value is not None:
+                schedulers.append('Scheduler ML')
+                values.append(ml_value)
+                colors.append('#e67e22')
+            
+            bars = ax.bar(schedulers, values, color=colors, alpha=0.7, edgecolor='black', linewidth=1.5)
+            
+            # Ajouter les valeurs sur les barres
+            for bar, value in zip(bars, values):
+                height = bar.get_height()
+                ax.text(bar.get_x() + bar.get_width()/2., height,
+                       f'{value:.3f} ms',
+                       ha='center', va='bottom', fontsize=11, fontweight='bold')
+            
+            # Ajuster les limites Y
+            if values:
+                max_val = max(values)
+                ax.set_ylim([0, max_val * 1.15])
+        
+        ax.set_ylabel('Latence réseau (ms)', fontsize=12)
+        ax.set_title('Comparaison de la latence réseau', fontsize=14, fontweight='bold')
+        ax.grid(True, alpha=0.3, axis='y')
         plt.tight_layout()
         
         plt.savefig(f'{output_dir}/latency_comparison.png', dpi=300, bbox_inches='tight')
@@ -477,57 +560,90 @@ class SchedulerComparator:
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
         
         # CPU imbalance
-        if not df_default.empty:
-            ax1.plot(
-                df_default['timestamp'],
-                df_default['cpu_imbalance'] * 100,
-                label='kube-scheduler (par défaut)',
-                marker='o',
-                markersize=3
-            )
+        default_cpu_imbalance = None
+        ml_cpu_imbalance = None
         
-        if not df_ml.empty:
-            ax1.plot(
-                df_ml['timestamp'],
-                df_ml['cpu_imbalance'] * 100,
-                label='Scheduler ML',
-                marker='s',
-                markersize=3
-            )
+        if not df_default.empty and len(df_default) > 0:
+            default_cpu_imbalance = df_default['cpu_imbalance'].mean() * 100
         
-        ax1.set_ylabel('Déséquilibre CPU (%)')
-        ax1.set_title('Comparaison du déséquilibre de charge')
-        ax1.legend()
-        ax1.grid(True, alpha=0.3)
-        ax1.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+        if not df_ml.empty and len(df_ml) > 0:
+            ml_cpu_imbalance = df_ml['cpu_imbalance'].mean() * 100
+        
+        schedulers_cpu = []
+        values_cpu = []
+        colors_cpu = []
+        
+        if default_cpu_imbalance is not None:
+            schedulers_cpu.append('kube-scheduler\n(par défaut)')
+            values_cpu.append(default_cpu_imbalance)
+            colors_cpu.append('#3498db')
+        
+        if ml_cpu_imbalance is not None:
+            schedulers_cpu.append('Scheduler ML')
+            values_cpu.append(ml_cpu_imbalance)
+            colors_cpu.append('#e67e22')
+        
+        if values_cpu:
+            bars1 = ax1.bar(schedulers_cpu, values_cpu, color=colors_cpu, alpha=0.7, edgecolor='black', linewidth=1.5)
+            for bar, value in zip(bars1, values_cpu):
+                height = bar.get_height()
+                ax1.text(bar.get_x() + bar.get_width()/2., height,
+                        f'{value:.3f}%',
+                        ha='center', va='bottom', fontsize=11, fontweight='bold')
+            if values_cpu:
+                max_val = max(values_cpu)
+                ax1.set_ylim([0, max_val * 1.15])
+        else:
+            ax1.text(0.5, 0.5, 'Aucune donnée disponible', 
+                    ha='center', va='center', transform=ax1.transAxes, fontsize=14)
+        
+        ax1.set_ylabel('Déséquilibre CPU (%)', fontsize=12)
+        ax1.set_title('Comparaison du déséquilibre de charge', fontsize=14, fontweight='bold')
+        ax1.grid(True, alpha=0.3, axis='y')
         
         # Memory imbalance
-        if not df_default.empty:
-            ax2.plot(
-                df_default['timestamp'],
-                df_default['memory_imbalance'] * 100,
-                label='kube-scheduler (par défaut)',
-                marker='o',
-                markersize=3
-            )
+        default_mem_imbalance = None
+        ml_mem_imbalance = None
         
-        if not df_ml.empty:
-            ax2.plot(
-                df_ml['timestamp'],
-                df_ml['memory_imbalance'] * 100,
-                label='Scheduler ML',
-                marker='s',
-                markersize=3
-            )
+        if not df_default.empty and len(df_default) > 0:
+            default_mem_imbalance = df_default['memory_imbalance'].mean() * 100
         
-        ax2.set_xlabel('Temps')
-        ax2.set_ylabel('Déséquilibre Mémoire (%)')
-        ax2.legend()
-        ax2.grid(True, alpha=0.3)
-        ax2.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
-        plt.xticks(rotation=45)
+        if not df_ml.empty and len(df_ml) > 0:
+            ml_mem_imbalance = df_ml['memory_imbalance'].mean() * 100
+        
+        schedulers_mem = []
+        values_mem = []
+        colors_mem = []
+        
+        if default_mem_imbalance is not None:
+            schedulers_mem.append('kube-scheduler\n(par défaut)')
+            values_mem.append(default_mem_imbalance)
+            colors_mem.append('#3498db')
+        
+        if ml_mem_imbalance is not None:
+            schedulers_mem.append('Scheduler ML')
+            values_mem.append(ml_mem_imbalance)
+            colors_mem.append('#e67e22')
+        
+        if values_mem:
+            bars2 = ax2.bar(schedulers_mem, values_mem, color=colors_mem, alpha=0.7, edgecolor='black', linewidth=1.5)
+            for bar, value in zip(bars2, values_mem):
+                height = bar.get_height()
+                ax2.text(bar.get_x() + bar.get_width()/2., height,
+                        f'{value:.4f}%',
+                        ha='center', va='bottom', fontsize=11, fontweight='bold')
+            if values_mem:
+                max_val = max(values_mem)
+                ax2.set_ylim([0, max_val * 1.15])
+        else:
+            ax2.text(0.5, 0.5, 'Aucune donnée disponible', 
+                    ha='center', va='center', transform=ax2.transAxes, fontsize=14)
+        
+        ax2.set_xlabel('Scheduler', fontsize=12)
+        ax2.set_ylabel('Déséquilibre Mémoire (%)', fontsize=12)
+        ax2.grid(True, alpha=0.3, axis='y')
+        
         plt.tight_layout()
-        
         plt.savefig(f'{output_dir}/imbalance_comparison.png', dpi=300, bbox_inches='tight')
         plt.close()
     

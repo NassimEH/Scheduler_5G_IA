@@ -5,15 +5,233 @@
 
 ---
 
+## 🚀 Démarrage rapide
+
+### Prérequis
+
+- **Docker Desktop** (ou Docker Engine) en fonctionnement
+- **Kind** (Kubernetes in Docker) >= 0.20.0
+- **kubectl** >= 1.28.0
+- **Python** 3.9+ avec les dépendances installées
+
+**Installation des dépendances Python** :
+```bash
+pip install -r scheduler/inference/requirements.txt
+pip install -r scheduler/extender/requirements.txt
+pip install -r scheduler/training/requirements.txt
+pip install -r scheduler/testing/requirements.txt
+```
+
+### Configuration initiale
+
+**Sur Windows (PowerShell)** :
+```powershell
+.\setup_project.ps1
+```
+
+**Sur Linux/Mac** :
+```bash
+chmod +x setup_project.sh
+./setup_project.sh
+```
+
+Ce script automatise :
+1. La construction des images Docker (network-latency-exporter, scheduler-inference, scheduler-extender)
+2. La création du cluster Kind
+3. Le déploiement de la stack monitoring (Prometheus, Grafana, exporters)
+4. Le déploiement du scheduler ML
+5. Le chargement des images dans Kind
+
+### Exécution de la comparaison
+
+**Sur Windows (PowerShell)** :
+```powershell
+.\run_comparison.ps1 -DurationMinutes 10
+```
+
+**Sur Linux/Mac** :
+```bash
+chmod +x run_comparison.sh
+./run_comparison.sh --duration 10
+```
+
+**Paramètres disponibles** :
+- `--duration` / `-DurationMinutes` : Durée de collecte en minutes (défaut: 10)
+  - Pour plus de données, augmentez cette valeur : `15`, `30`, `60` minutes
+  - Plus la durée est longue, plus vous aurez de points de données (1 point toutes les 30 secondes)
+- `--scenario` : Scénario de test (`balanced`, `high_latency`, `resource_intensive`, `mixed`)
+- `--prometheus-url` : URL de Prometheus (défaut: `http://localhost:9090`)
+
+**Exemples** :
+```powershell
+# Collecte de 15 minutes
+.\run_comparison.ps1 -DurationMinutes 15
+
+# Collecte de 30 minutes avec scénario intensif
+.\run_comparison.ps1 -DurationMinutes 30 -Scenario resource_intensive
+```
+
+```bash
+# Collecte de 15 minutes
+./run_comparison.sh --duration 15
+
+# Collecte de 30 minutes avec scénario intensif
+./run_comparison.sh --duration 30 --scenario resource_intensive
+```
+
+**Résultats** : Les graphiques de comparaison sont générés dans `comparison_results/` :
+- `cpu_comparison.png` : Comparaison de l'utilisation CPU
+- `memory_comparison.png` : Comparaison de l'utilisation mémoire
+- `latency_comparison.png` : Comparaison de la latence réseau
+- `imbalance_comparison.png` : Comparaison du déséquilibre de charge
+- `comparison_report.txt` : Rapport texte avec les statistiques
+
+---
+
+## 📖 Fonctionnement du projet
+
+### Architecture et workflow
+
+Le scheduler ML fonctionne comme un **extender** de kube-scheduler :
+
+```
+kube-scheduler (par défaut)
+    │
+    ├─► Scheduler Extender (REST API)
+    │       │
+    │       └─► Inference Server (FastAPI)
+    │               │
+    │               └─► Modèle ML (ou heuristique par défaut)
+    │
+    └─► Fallback vers logique par défaut si l'extender échoue
+```
+
+### Mode de fonctionnement
+
+Le système peut fonctionner en **deux modes** :
+
+1. **Mode Heuristique** (par défaut) :
+   - Utilise une heuristique optimisée qui priorise :
+     - Optimisation CPU (zone optimale 40-70%)
+     - Équilibre de charge entre nodes
+     - Réduction de la latence réseau
+     - Évite la surcharge des nodes
+   - Fonctionne immédiatement sans entraînement
+
+2. **Mode ML** (optionnel) :
+   - Utilise un modèle Random Forest entraîné sur des données historiques
+   - Nécessite d'entraîner le modèle au préalable (voir section "Entraînement du modèle")
+   - Le modèle est chargé automatiquement s'il est présent dans `/models/scheduler_model.pkl`
+
+### Workflow de comparaison
+
+Le script `run_comparison` exécute automatiquement :
+
+1. **Étape 1 : Collecte avec scheduler par défaut**
+   - Crée des workloads de test
+   - Collecte les métriques pendant la durée spécifiée
+   - Sauvegarde dans `results_default/metrics_*.csv`
+
+2. **Étape 2 : Collecte avec scheduler ML**
+   - Crée les mêmes workloads de test
+   - Collecte les métriques avec le scheduler ML actif
+   - Sauvegarde dans `results_ml/metrics_*.csv`
+
+3. **Étape 3 : Comparaison et graphiques**
+   - Compare les deux jeux de données
+   - Génère des graphiques en barres (histogrammes)
+   - Crée un rapport texte avec les statistiques
+
+### Métriques collectées
+
+Pour chaque scheduler, les métriques suivantes sont collectées :
+- **CPU moyen** : Utilisation CPU moyenne du cluster (%)
+- **Mémoire moyenne** : Utilisation mémoire moyenne du cluster (%)
+- **Latence moyenne** : Latence réseau moyenne entre pods (ms)
+- **Déséquilibre CPU** : Écart-type de l'utilisation CPU entre nodes (%)
+- **Déséquilibre Mémoire** : Écart-type de l'utilisation mémoire entre nodes (%)
+
+---
+
+## 📁 Arborescence du projet
+
+```
+Scheduler_5G_IA/
+│
+├── infra/                          # Infrastructure et configuration
+│   ├── bootstrap.ps1               # Script de bootstrap Windows
+│   ├── bootstrap.sh                # Script de bootstrap Linux/Mac
+│   └── kind-config.yaml            # Configuration du cluster Kind
+│
+├── monitoring/                     # Stack de monitoring
+│   ├── prometheus/                  # Configuration Prometheus
+│   ├── grafana/                    # Dashboards Grafana
+│   ├── node-exporter/              # Exporter de métriques nodes
+│   ├── cadvisor/                   # Exporter de métriques containers
+│   ├── kube-state-metrics/        # Métriques d'état Kubernetes
+│   └── network-latency-exporter/   # Exporter custom de latence réseau
+│
+├── scheduler/                      # Composants du scheduler ML
+│   ├── config/                     # Configuration kube-scheduler
+│   │   └── scheduler-policy.yaml  # Policy pour l'extender
+│   │
+│   ├── inference/                  # Serveur d'inférence ML
+│   │   ├── inference_server.py     # Serveur FastAPI
+│   │   ├── model_loader.py         # Chargeur de modèle ML
+│   │   ├── feature_extractor.py    # Extraction de features
+│   │   ├── Dockerfile              # Image Docker
+│   │   └── requirements.txt        # Dépendances Python
+│   │
+│   ├── extender/                   # Scheduler extender
+│   │   ├── extender_server.py      # Serveur REST pour kube-scheduler
+│   │   ├── Dockerfile              # Image Docker
+│   │   └── requirements.txt        # Dépendances Python
+│   │
+│   ├── training/                   # Scripts d'entraînement
+│   │   ├── data_collector.py       # Collecte de données d'entraînement
+│   │   ├── train_model.py          # Entraînement du modèle ML
+│   │   └── requirements.txt        # Dépendances Python
+│   │
+│   ├── testing/                    # Scripts de test et comparaison
+│   │   ├── compare_schedulers.py   # Comparaison des schedulers
+│   │   ├── test_scenarios.py       # Scénarios de test
+│   │   └── requirements.txt        # Dépendances Python
+│   │
+│   └── models/                     # Modèles ML entraînés
+│       └── scheduler_model.pkl     # Modèle ML (généré par l'utilisateur)
+│
+├── workloads/                     # Workloads de test
+│   └── sample-workload.yaml        # Exemple de workload
+│
+├── setup_project.ps1               # Script de configuration Windows
+├── setup_project.sh                # Script de configuration Linux/Mac
+├── run_comparison.ps1              # Script de comparaison Windows
+├── run_comparison.sh                # Script de comparaison Linux/Mac
+│
+└── README.md                        # Ce fichier
+
+# Dossiers générés lors de l'exécution (non versionnés)
+results_default/                     # Métriques du scheduler par défaut
+results_ml/                          # Métriques du scheduler ML
+comparison_results/                  # Graphiques et rapport de comparaison
+```
+
+**Note** : Les dossiers `results_*` et `comparison_results/` sont générés automatiquement lors de l'exécution et peuvent être supprimés. Ils seront régénérés à chaque nouvelle exécution.
+
+---
+
 ## Table des matières
 
-1. [État de l'art et motivation](#1-état-de-lart-et-motivation)
-2. [Méthode choisie et justification](#2-méthode-choisie-et-justification)
-3. [Architecture du système](#3-architecture-du-système)
-4. [Installation et déploiement](#4-installation-et-déploiement)
-5. [Résultats expérimentaux](#5-résultats-expérimentaux)
-6. [Conclusion et perspectives](#6-conclusion-et-perspectives)
-7. [Références](#7-références)
+1. [Démarrage rapide](#-démarrage-rapide)
+2. [Fonctionnement du projet](#-fonctionnement-du-projet)
+3. [Arborescence du projet](#-arborescence-du-projet)
+4. [État de l'art et motivation](#1-état-de-lart-et-motivation)
+5. [Méthode choisie et justification](#2-méthode-choisie-et-justification)
+6. [Architecture du système](#3-architecture-du-système)
+7. [Installation et déploiement](#4-installation-et-déploiement)
+8. [Résultats expérimentaux](#5-résultats-expérimentaux)
+9. [Conclusion et perspectives](#6-conclusion-et-perspectives)
+10. [Références](#7-références)
 
 ---
 
@@ -403,15 +621,39 @@ python --version
 
 ### 4.2. Déploiement complet
 
-#### Étape 1 : Construction de l'image custom
+**⚠️ IMPORTANT** : Utilisez les scripts `setup_project.ps1` (Windows) ou `setup_project.sh` (Linux/Mac) qui automatisent toutes les étapes ci-dessous.
 
-```bash
-# Construire l'image du network-latency-exporter
-docker build -t network-latency-exporter:latest \
-    monitoring/network-latency-exporter/
+#### Méthode automatique (recommandée)
+
+**Sur Windows (PowerShell)** :
+```powershell
+.\setup_project.ps1
 ```
 
-#### Étape 2 : Création du cluster et déploiement
+**Sur Linux/Mac** :
+```bash
+chmod +x setup_project.sh
+./setup_project.sh
+```
+
+#### Méthode manuelle
+
+Si vous préférez exécuter les étapes manuellement :
+
+**Étape 1 : Construction des images Docker**
+
+```bash
+# Network latency exporter
+docker build -t network-latency-exporter:latest monitoring/network-latency-exporter/
+
+# Scheduler inference
+docker build -t scheduler-inference:latest scheduler/inference/
+
+# Scheduler extender
+docker build -t scheduler-extender:latest scheduler/extender/
+```
+
+**Étape 2 : Création du cluster et déploiement**
 
 **Sur Linux/Mac** :
 ```bash
@@ -423,12 +665,19 @@ docker build -t network-latency-exporter:latest \
 .\infra\bootstrap.ps1
 ```
 
-**Ce script effectue** :
+**Étape 3 : Chargement des images dans Kind**
+
+```bash
+kind load docker-image network-latency-exporter:latest --name scheduler5g-dev
+kind load docker-image scheduler-inference:latest --name scheduler5g-dev
+kind load docker-image scheduler-extender:latest --name scheduler5g-dev
+```
+
+**Ce que fait le bootstrap** :
 1. Création d'un cluster Kind multi-nœuds (1 control-plane + 3 workers)
-2. Chargement de l'image custom dans Kind
-3. Déploiement de la stack monitoring (Prometheus, Grafana, exporters)
-4. Déploiement du scheduler intelligent
-5. Déploiement des workloads 5G de test
+2. Déploiement de la stack monitoring (Prometheus, Grafana, exporters)
+3. Déploiement du scheduler intelligent (inference + extender)
+4. Déploiement des workloads 5G de test
 
 #### Étape 3 : Vérification du déploiement
 
@@ -479,35 +728,24 @@ kubectl port-forward -n kube-system svc/inference-server 8001:8001
 
 ### 4.3. Configuration du scheduler ML
 
-Par défaut, le cluster utilise le scheduler natif. Pour activer le scheduler ML :
+**Note** : Le scheduler ML est **automatiquement activé** lors du déploiement via `setup_project.ps1` ou `setup_project.sh`. Le scheduler extender est configuré dans `scheduler/config/scheduler-policy.yaml` et est utilisé par kube-scheduler pour prioriser les nodes.
 
-**Sur Linux/Mac** :
-```bash
-./scheduler/scripts/configure-scheduler.sh
-```
+Le système fonctionne en mode **heuristique optimisée** par défaut. Pour utiliser un modèle ML entraîné, suivez les étapes de la section 4.4.
 
-**Sur Windows (PowerShell)** :
-```powershell
-.\scheduler\scripts\configure-scheduler.ps1
-```
+### 4.4. Entraînement du modèle (optionnel)
 
-**Pour revenir au scheduler par défaut** :
-```bash
-./scheduler/scripts/configure-scheduler.sh --disable
-```
+**Note** : L'entraînement du modèle est **optionnel**. Le système fonctionne avec une heuristique optimisée par défaut. L'entraînement permet d'améliorer les performances en apprenant des patterns spécifiques à votre environnement.
 
-### 4.4. Entraînement du modèle
-
-#### Phase 1 : Collecte de données
+#### Phase 1 : Collecte de données d'entraînement
 
 ```bash
-# Laisser le cluster tourner 30-60 minutes pour générer des métriques
-# Puis collecter les données historiques
+# Assurez-vous que Prometheus est accessible
+kubectl port-forward -n monitoring svc/prometheus 9090:9090
 
+# Dans un autre terminal, collecter les données
 python scheduler/training/data_collector.py \
     --prometheus-url http://localhost:9090 \
-    --kubeconfig ~/.kube/config \
-    --output data/training_data.csv \
+    --output training_data.csv \
     --hours 1
 ```
 
@@ -517,17 +755,16 @@ Collecte des métriques depuis Prometheus...
 Collecte des informations depuis Kubernetes API...
 Génération des features...
 Dataset sauvegardé: 2450 exemples, 12 features
-Fichier: data/training_data.csv
+Fichier: training_data.csv
 ```
 
-#### Phase 2 : Entraînement
+#### Phase 2 : Entraînement du modèle
 
 ```bash
 python scheduler/training/train_model.py \
-    --data data/training_data.csv \
-    --output models/scheduler_model.pkl \
-    --algorithm random_forest \
-    --cv-folds 5
+    --data training_data.csv \
+    --output scheduler_model.pkl \
+    --model-type random_forest
 ```
 
 **Sortie** :
@@ -537,27 +774,33 @@ Séparation train/test: 1960/490
 Entraînement Random Forest...
   Validation croisée (5 folds): MAE=0.023 ± 0.004
   Test set: MAE=0.021, R²=0.87
-Feature importance:
-  1. avg_latency_ms: 0.234
-  2. cpu_usage_percent: 0.189
-  3. memory_usage_percent: 0.156
-  ...
-Modèle sauvegardé: models/scheduler_model.pkl
+Modèle sauvegardé: scheduler_model.pkl
 ```
 
 #### Phase 3 : Déploiement du modèle
 
-```bash
-# Identifier le pod inference-server
-export INFERENCE_POD=$(kubectl get pods -n kube-system \
-    -l app=inference-server -o jsonpath='{.items[0].metadata.name}')
+**Sur Windows (PowerShell)** :
+```powershell
+# Identifier le pod inference
+$pod = kubectl get pods -n monitoring -l app=scheduler-inference -o jsonpath='{.items[0].metadata.name}'
 
 # Copier le modèle
-kubectl cp models/scheduler_model.pkl \
-    kube-system/$INFERENCE_POD:/models/scheduler_model.pkl
+kubectl cp scheduler_model.pkl "monitoring/${pod}:/models/scheduler_model.pkl"
 
-# Redémarrer le serveur pour charger le nouveau modèle
-kubectl rollout restart deployment/inference-server -n kube-system
+# Redémarrer pour charger le nouveau modèle
+kubectl rollout restart deployment scheduler-inference -n monitoring
+```
+
+**Sur Linux/Mac** :
+```bash
+# Identifier le pod inference
+INFERENCE_POD=$(kubectl get pods -n monitoring -l app=scheduler-inference -o jsonpath='{.items[0].metadata.name}')
+
+# Copier le modèle
+kubectl cp scheduler_model.pkl monitoring/$INFERENCE_POD:/models/scheduler_model.pkl
+
+# Redémarrer pour charger le nouveau modèle
+kubectl rollout restart deployment scheduler-inference -n monitoring
 ```
 
 ---
@@ -579,45 +822,70 @@ Nous avons conçu 4 scénarios reproductibles pour évaluer le scheduler :
 
 #### 5.1.2. Métriques collectées
 
-Pour chaque scénario, nous collectons pendant 5 minutes :
+Pour chaque scénario, les métriques sont collectées pendant la durée spécifiée (paramètre `--duration`).
 
 **Métriques de performance** :
 - CPU moyen par nœud (%)
 - Mémoire moyenne par nœud (%)
 - Latence réseau moyenne (ms)
-- Latence P95 et P99 (ms)
 
 **Métriques d'équilibrage** :
-- Écart-type CPU entre nœuds
-- Écart-type mémoire entre nœuds
-- Coefficient de variation
+- Écart-type CPU entre nœuds (déséquilibre CPU)
+- Écart-type mémoire entre nœuds (déséquilibre mémoire)
 
-**Métriques applicatives** :
-- Temps de réponse moyen des pods UPF
-- Taux de succès des requêtes
+**⚠️ Important** : Pour obtenir des résultats significatifs, augmentez la durée de collecte :
+- **10 minutes** : ~20 points de données (minimum recommandé)
+- **15 minutes** : ~30 points de données
+- **30 minutes** : ~60 points de données (recommandé pour des résultats fiables)
+- **60 minutes** : ~120 points de données (pour des analyses approfondies)
+
+Modifiez le paramètre `--duration` dans les scripts `run_comparison.ps1` ou `run_comparison.sh` pour changer la durée.
 
 #### 5.1.3. Procédure de test
 
+**Méthode automatique (recommandée)** :
+
+**Sur Windows (PowerShell)** :
+```powershell
+.\run_comparison.ps1 -DurationMinutes 10
+```
+
+**Sur Linux/Mac** :
 ```bash
-# 1. Test avec scheduler par défaut
-./scheduler/scripts/configure-scheduler.sh --disable
+./run_comparison.sh --duration 10
+```
 
-python scheduler/testing/test_scenarios.py --scenario balanced --cleanup
+Ce script automatise toutes les étapes :
+1. Création des workloads de test
+2. Collecte des métriques avec le scheduler par défaut
+3. Collecte des métriques avec le scheduler ML
+4. Génération des graphiques de comparaison
+
+**Méthode manuelle** (pour un contrôle plus fin) :
+
+```bash
+# 1. Créer un scénario de test
+python scheduler/testing/test_scenarios.py --scenario balanced --namespace workloads
+
+# 2. Collecter les métriques du scheduler par défaut
 python scheduler/testing/compare_schedulers.py \
-    --collect --duration 300 --output results/default_balanced
+    --collect --duration 10 --output results_default \
+    --prometheus-url http://localhost:9090
 
-# 2. Test avec scheduler ML
-./scheduler/scripts/configure-scheduler.sh
+# 3. Nettoyer et recréer pour le scheduler ML
+python scheduler/testing/test_scenarios.py --cleanup --namespace workloads
+python scheduler/testing/test_scenarios.py --scenario balanced --namespace workloads
 
-python scheduler/testing/test_scenarios.py --scenario balanced --cleanup
+# 4. Collecter les métriques du scheduler ML
 python scheduler/testing/compare_schedulers.py \
-    --collect --duration 300 --output results/ml_balanced
+    --collect --duration 10 --output results_ml \
+    --prometheus-url http://localhost:9090
 
-# 3. Génération du rapport comparatif
+# 5. Générer le rapport comparatif
 python scheduler/testing/compare_schedulers.py \
-    --default-data results/default_balanced/metrics_*.csv \
-    --ml-data results/ml_balanced/metrics_*.csv \
-    --output results/comparison_balanced
+    --default-data results_default/metrics_*.csv \
+    --ml-data results_ml/metrics_*.csv \
+    --output comparison_results
 ```
 
 ### 5.2. Résultats quantitatifs

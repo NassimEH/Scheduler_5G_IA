@@ -129,7 +129,7 @@ class StubModel:
     
     def predict(self, features: np.ndarray) -> np.ndarray:
         """
-        Prédiction stub basée sur une heuristique simple.
+        Prédiction stub basée sur une heuristique améliorée.
         
         Features attendues (dans l'ordre):
         - cpu_available_ratio
@@ -138,7 +138,11 @@ class StubModel:
         - cpu_load_avg
         - memory_load_avg
         - pod_density
-        - etc.
+        - balance_score (NOUVEAU)
+        - overload_penalty (NOUVEAU)
+        - label_compatibility
+        - pod_type_score
+        - same_type_pods_count
         """
         if len(features.shape) == 1:
             features = features.reshape(1, -1)
@@ -147,20 +151,56 @@ class StubModel:
         for node_features in features:
             score = 0.0
             
-            # Si on a au moins 2 features (CPU et mémoire)
-            if len(node_features) >= 2:
-                cpu_ratio = node_features[0]
-                memory_ratio = node_features[1]
-                
-                # Score basé sur les ressources disponibles
-                score += cpu_ratio * 0.5
-                score += memory_ratio * 0.5
-                
-                # Bonus pour faible latence si disponible (feature index 2)
-                if len(node_features) >= 3 and node_features[2] is not None:
-                    latency_score = 1.0 - node_features[2]  # Inverse de la latence normalisée
-                    score += latency_score * 0.2
-                    score /= 1.2  # Normaliser
+            if len(node_features) < 2:
+                scores.append(0.5)  # Score neutre
+                continue
+            
+            cpu_ratio = node_features[0]
+            memory_ratio = node_features[1]
+            
+            # 1. Optimisation CPU (30% - PRIORITÉ)
+            if len(node_features) >= 4:
+                cpu_load = node_features[3]
+                cpu_usage_score = 0.0
+                if 0.4 <= cpu_load <= 0.7:
+                    cpu_usage_score = 1.0  # Zone optimale
+                elif cpu_load < 0.4:
+                    cpu_usage_score = cpu_load / 0.4  # Sous-utilisation
+                else:  # > 0.7
+                    cpu_usage_score = max(0.0, 1.0 - (cpu_load - 0.7) * 3.33)  # Sur-utilisation
+                score += cpu_usage_score * 0.30
+            else:
+                # Fallback : utiliser cpu_ratio
+                score += cpu_ratio * 0.30
+            
+            # 2. Ressources disponibles (20%)
+            score += cpu_ratio * 0.10
+            score += memory_ratio * 0.10
+            
+            # 3. Latence (15%)
+            if len(node_features) >= 3:
+                latency = node_features[2]
+                score += (1.0 - latency) * 0.15
+            
+            # 4. Équilibre de charge (25%)
+            if len(node_features) >= 7:
+                balance_score = node_features[6]
+                score += balance_score * 0.25
+            else:
+                # Fallback : calculer depuis la charge
+                if len(node_features) >= 5:
+                    cpu_load = node_features[3] if len(node_features) >= 4 else 0.5
+                    mem_load = node_features[4] if len(node_features) >= 5 else 0.5
+                    # Plus proche de 0.5 = meilleur équilibre
+                    cpu_balance = 1.0 - abs(cpu_load - 0.5) * 2
+                    mem_balance = 1.0 - abs(mem_load - 0.5) * 2
+                    balance_score = (cpu_balance + mem_balance) / 2.0
+                    score += balance_score * 0.25
+            
+            # 5. Pénalité de surcharge (10%)
+            if len(node_features) >= 8:
+                overload_penalty = node_features[7]
+                score += (1.0 - overload_penalty) * 0.10
             
             scores.append(max(0.0, min(1.0, score)))  # Clamp entre 0 et 1
         
