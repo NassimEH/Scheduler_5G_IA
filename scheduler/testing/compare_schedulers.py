@@ -11,6 +11,7 @@ import argparse
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
 import requests
+import re
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
@@ -18,7 +19,7 @@ from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -38,6 +39,10 @@ class SchedulerComparator:
             k8s_api_url: URL de l'API Kubernetes (optionnel)
         """
         self.prometheus_url = prometheus_url
+        # toggles
+        self.prefer_node_metrics = False
+        self.dump_prom_responses = False
+        self.output_dir_for_dumps = None
         self.k8s_client = None
         self._init_k8s_client()
         self.metrics_data = []
@@ -106,18 +111,30 @@ class SchedulerComparator:
     def _collect_metrics_at_time(self, timestamp: datetime) -> Optional[Dict[str, Any]]:
         """Collecte les métriques à un moment donné"""
         try:
-            timestamp_unix = int(timestamp.timestamp())
+            # use float timestamp (may include fractional seconds) to increase chance of matching samples
+            timestamp_unix = timestamp.timestamp()
             
             # CPU moyen par node (utilisation CPU en pourcentage)
             # Pour une requête à un timestamp donné, on utilise rate avec une fenêtre
             # Calcul: 100 - (moyenne du CPU idle * 100)
             cpu_query = 'avg(100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[2m])) * 100))'
             cpu_usage = self._query_prometheus_at_time(cpu_query, timestamp_unix)
-            # Si la requête avec rate ne fonctionne pas (pas assez de données), utiliser une requête instantanée
-            if cpu_usage is None:
+            # Si la requête avec rate ne fonctionne pas (pas assez de données), essayer plusieurs fallback
+            if cpu_usage is None or cpu_usage == 0.0:
                 # Requête instantanée basée sur la valeur actuelle
                 cpu_query_simple = 'avg(1 - (node_cpu_seconds_total{mode="idle"} / node_cpu_seconds_total))'
                 cpu_usage = self._query_prometheus_at_time(cpu_query_simple, timestamp_unix)
+
+            if cpu_usage is None or cpu_usage == 0.0:
+                # Fallback: utiliser la charge système rapportée (node_load1) comme approximation
+                try:
+                    load_query = 'avg(node_load1)'
+                    load_val = self._query_prometheus_at_time(load_query, timestamp_unix)
+                    if load_val is not None:
+                        # Normaliser grossièrement la charge en 0-1 (assume 1.0 ~= full load)
+                        cpu_usage = min(1.0, float(load_val))
+                except Exception:
+                    cpu_usage = 0.0
             # Normaliser en pourcentage (0-1) si nécessaire
             if cpu_usage is not None and cpu_usage > 1.0:
                 cpu_usage = cpu_usage / 100.0
@@ -134,10 +151,24 @@ class SchedulerComparator:
                 'avg(network_latency_rtt_seconds)',  # Autre format possible
                 'avg(histogram_quantile(0.5, rate(network_latency_bucket[5m])))'  # Si disponible
             ]
+            # Si on préfère les métriques node-exporter, éviter autant que possible
+            # les métriques pod-level spécifiques et essayer des métriques node-level
+            if self.prefer_node_metrics:
+                latency_queries = [
+                    'avg(pod_network_rtt_ms) / 1000',
+                    'avg(node_network_receive_bytes_total)'
+                ]
             for latency_query in latency_queries:
                 latency = self._query_prometheus_at_time(latency_query, timestamp_unix)
                 if latency is not None:
                     break
+
+            # If latency remains None, try reading pod_network_rtt_ms without conversion
+            if latency is None:
+                alt = self._query_prometheus_at_time('avg(pod_network_rtt_ms)', timestamp_unix)
+                if alt is not None:
+                    # it's already in ms -> convert to seconds for consistency above
+                    latency = float(alt) / 1000.0
             
             # Nombre de pods par node
             pods_per_node = self._get_pods_per_node()
@@ -170,7 +201,7 @@ class SchedulerComparator:
     def _query_prometheus_at_time(
         self,
         query: str,
-        timestamp: int
+        timestamp: float
     ) -> Optional[float]:
         """Exécute une requête PromQL à un timestamp donné"""
         try:
@@ -180,14 +211,96 @@ class SchedulerComparator:
                 'time': timestamp
             }
             
-            response = requests.get(url, params=params, timeout=5)
+            # make request a bit more tolerant (some proxied setups are slow)
+            logger.debug(f"Prometheus query (time): {query} @ {timestamp}")
+            response = requests.get(url, params=params, timeout=10)
             response.raise_for_status()
+            # optional dump of Prometheus JSON for debugging
+            try:
+                if self.dump_prom_responses:
+                    outdir = self.output_dir_for_dumps or 'prom_dumps'
+                    os.makedirs(outdir, exist_ok=True)
+                    safe_q = re.sub(r'[^0-9A-Za-z]+', '_', query)[:80]
+                    fname = f"{outdir}/prom_time_{safe_q}_{int(time.time())}.json"
+                    with open(fname, 'w', encoding='utf-8') as fh:
+                        fh.write(response.text)
+                    logger.debug(f"Wrote Prometheus time response to {fname}")
+            except Exception:
+                logger.debug("Failed to dump Prometheus time response")
             
             data = response.json()
             if data['status'] == 'success' and data['data']['result']:
-                value = data['data']['result'][0]['value'][1]
-                return float(value)
-            
+                # support both vector and scalar-like payloads
+                try:
+                    value = data['data']['result'][0]['value'][1]
+                    logger.debug(f"Prometheus returned value (time): {value}")
+                    return float(value)
+                except Exception:
+                    logger.debug("Unable to parse Prometheus time-series value")
+
+            # If no data for the exact timestamp, try an instant query (latest)
+            try:
+                logger.debug(f"Prometheus instant query fallback: {query}")
+                response2 = requests.get(url, params={'query': query}, timeout=10)
+                response2.raise_for_status()
+                if self.dump_prom_responses:
+                    try:
+                        outdir = self.output_dir_for_dumps or 'prom_dumps'
+                        os.makedirs(outdir, exist_ok=True)
+                        safe_q = re.sub(r'[^0-9A-Za-z]+', '_', query)[:80]
+                        fname2 = f"{outdir}/prom_instant_{safe_q}_{int(time.time())}.json"
+                        with open(fname2, 'w', encoding='utf-8') as fh2:
+                            fh2.write(response2.text)
+                        logger.debug(f"Wrote Prometheus instant response to {fname2}")
+                    except Exception:
+                        logger.debug("Failed to dump Prometheus instant response")
+                data2 = response2.json()
+                if data2['status'] == 'success' and data2['data']['result']:
+                    value = data2['data']['result'][0]['value'][1]
+                    logger.debug(f"Prometheus returned value (instant): {value}")
+                    return float(value)
+            except Exception as e:
+                logger.debug(f"Instant query fallback failed: {e}")
+
+            # Final fallback: try a small range query around the timestamp and compute an average
+            try:
+                url_range = f"{self.prometheus_url.rstrip('/')}/api/v1/query_range"
+                # take a short window ending at timestamp
+                start = timestamp - 30
+                end = timestamp
+                params_range = {
+                    'query': query,
+                    'start': start,
+                    'end': end,
+                    'step': '15s'
+                }
+                logger.debug(f"Prometheus range query fallback: {query} start={start} end={end}")
+                resp_range = requests.get(url_range, params=params_range, timeout=15)
+                resp_range.raise_for_status()
+                if self.dump_prom_responses:
+                    try:
+                        outdir = self.output_dir_for_dumps or 'prom_dumps'
+                        os.makedirs(outdir, exist_ok=True)
+                        safe_q = re.sub(r'[^0-9A-Za-z]+', '_', query)[:80]
+                        fnamer = f"{outdir}/prom_range_{safe_q}_{int(time.time())}.json"
+                        with open(fnamer, 'w', encoding='utf-8') as fhr:
+                            fhr.write(resp_range.text)
+                        logger.debug(f"Wrote Prometheus range response to {fnamer}")
+                    except Exception:
+                        logger.debug("Failed to dump Prometheus range response")
+                data_range = resp_range.json()
+                if data_range['status'] == 'success' and data_range['data']['result']:
+                    # compute mean of the first series values
+                    series = data_range['data']['result'][0]['values']
+                    vals = [float(v[1]) for v in series if v and v[1] is not None]
+                    if vals:
+                        avg_val = sum(vals) / len(vals)
+                        logger.debug(f"Prometheus range fallback avg: {avg_val}")
+                        return float(avg_val)
+            except Exception as e:
+                logger.debug(f"Range query fallback failed: {e}")
+
+            logger.debug("Prometheus query returned no data for any fallback")
             return None
         except Exception as e:
             logger.debug(f"Erreur lors de la requête Prometheus: {e}")
@@ -451,13 +564,22 @@ class SchedulerComparator:
         
         if not df_default.empty and not df_ml.empty:
             report_lines.append("Améliorations du Scheduler ML :")
-            cpu_improvement = ((df_default['cpu_imbalance'].mean() - df_ml['cpu_imbalance'].mean()) / df_default['cpu_imbalance'].mean()) * 100
-            mem_improvement = ((df_default['memory_imbalance'].mean() - df_ml['memory_imbalance'].mean()) / df_default['memory_imbalance'].mean()) * 100
-            latency_improvement = ((df_default['network_latency_avg'].mean() - df_ml['network_latency_avg'].mean()) / df_default['network_latency_avg'].mean()) * 100
-            
-            report_lines.append(f"  Réduction du déséquilibre CPU : {cpu_improvement:.2f}%")
-            report_lines.append(f"  Réduction du déséquilibre Mémoire : {mem_improvement:.2f}%")
-            report_lines.append(f"  Réduction de la latence : {latency_improvement:.2f}%")
+            # Eviter division par zéro si la valeur moyenne de référence est nulle
+            def percent_change(base, new):
+                try:
+                    if base == 0 or base is None:
+                        return None
+                    return ((base - new) / base) * 100.0
+                except Exception:
+                    return None
+
+            cpu_improvement = percent_change(df_default['cpu_imbalance'].mean(), df_ml['cpu_imbalance'].mean())
+            mem_improvement = percent_change(df_default['memory_imbalance'].mean(), df_ml['memory_imbalance'].mean())
+            latency_improvement = percent_change(df_default['network_latency_avg'].mean(), df_ml['network_latency_avg'].mean())
+
+            report_lines.append(f"  Réduction du déséquilibre CPU : {cpu_improvement:.2f}%" if cpu_improvement is not None else "  Réduction du déséquilibre CPU : N/A")
+            report_lines.append(f"  Réduction du déséquilibre Mémoire : {mem_improvement:.2f}%" if mem_improvement is not None else "  Réduction du déséquilibre Mémoire : N/A")
+            report_lines.append(f"  Réduction de la latence : {latency_improvement:.2f}%" if latency_improvement is not None else "  Réduction de la latence : N/A")
         
         report_text = "\n".join(report_lines)
         
@@ -498,13 +620,27 @@ def main():
         default='comparison_results',
         help='Répertoire de sortie'
     )
+    parser.add_argument(
+        '--prefer-node-metrics',
+        action='store_true',
+        help='Utiliser préférentiellement les métriques fournies par node-exporter (fallback)'
+    )
+    parser.add_argument(
+        '--dump-prometheus-responses',
+        action='store_true',
+        help='Enregistrer les réponses JSON de Prometheus pour débogage dans le répertoire de sortie'
+    )
     
     args = parser.parse_args()
     
     comparator = SchedulerComparator(args.prometheus_url)
+    comparator.prefer_node_metrics = bool(args.prefer_node_metrics)
+    comparator.dump_prom_responses = bool(args.dump_prometheus_responses)
+    comparator.output_dir_for_dumps = args.output
     
     if args.collect:
         # Collecter les métriques
+        os.makedirs(args.output, exist_ok=True)
         df = comparator.collect_metrics(duration_minutes=args.duration)
         if not df.empty:
             output_file = f'{args.output}/metrics_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'

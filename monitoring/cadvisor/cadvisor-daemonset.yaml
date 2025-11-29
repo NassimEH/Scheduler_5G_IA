@@ -17,6 +17,9 @@ spec:
         app: cadvisor
     spec:
       hostNetwork: true
+      # Disable automatic mounting of the service account token to avoid projected
+      # volume mount issues on some container runtimes where the rootfs is read-only.
+      automountServiceAccountToken: false
       containers:
       - name: cadvisor
         image: gcr.io/cadvisor/cadvisor:latest
