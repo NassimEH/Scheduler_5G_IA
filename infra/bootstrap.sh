@@ -30,6 +30,12 @@ kind create cluster --name "$CLUSTER_NAME" --config "$SCRIPT_DIR/kind-config.yam
 echo "Contexte kubectl : kind-$CLUSTER_NAME"
 kubectl cluster-info --context "kind-$CLUSTER_NAME"
 
+echo "Creation des namespaces..."
+echo "  - namespace 'monitoring'..."
+kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+echo "  - namespace 'workloads'..."
+kubectl create namespace workloads --dry-run=client -o yaml | kubectl apply -f -
+
 echo "Deploiement de la stack monitoring (Prometheus + Grafana + exporters)..."
 
 # ServiceAccount et RBAC pour Prometheus
