@@ -83,11 +83,12 @@ class SchedulerModelTrainer:
         Le label représente la qualité du placement (score de 0 à 1).
         
         Pour un bon placement, on veut :
-        - CPU bas mais efficace (zone optimale 30-60% pour réduire consommation)
-        - Latence réseau minimale (PRIORITÉ ÉLEVÉE)
-        - Mémoire optimisée (moins de charge mémoire)
-        - Meilleur équilibre de charge
-        - Moins de surcharge
+        - Équilibre de charge optimal (PRIORITÉ ABSOLUE - 60%) : minimise directement l'écart-type futur du cluster
+        - CPU bas mais efficace (zone optimale 30-60% pour réduire consommation - 15%)
+        - Latence réseau minimale (15%)
+        - Mémoire optimisée (moins de charge mémoire - 8%)
+        - Ressources disponibles (2%)
+        - Surcharge déjà prise en compte dans l'écart-type (0%)
         """
         scores = []
         
@@ -103,7 +104,7 @@ class SchedulerModelTrainer:
             cpu_ratio = row.get('cpu_available_ratio', 0.5)
             mem_ratio = row.get('memory_available_ratio', 0.5)
             
-            # 1. Optimisation CPU (25%) - Zone optimale 30-60% pour réduire consommation
+            # 1. Optimisation CPU (15% - réduit pour donner plus de poids à l'équilibre)
             # Favoriser les nodes avec charge CPU modérée (moins de consommation globale)
             cpu_usage_score = 0.0
             if 0.30 <= cpu_load <= 0.60:
@@ -116,34 +117,42 @@ class SchedulerModelTrainer:
                 # Utilisation élevée : pénalité forte (consomme trop de CPU)
                 cpu_usage_score = max(0.0, 1.0 - (cpu_load - 0.60) * 2.5)  # Décroît rapidement
             
-            score += cpu_usage_score * 0.25  # 25% pour l'optimisation CPU
+            score += cpu_usage_score * 0.15  # 15% pour l'optimisation CPU (réduit de 20%)
             
-            # 2. Latence réseau (30% - PRIORITÉ ÉLEVÉE pour amélioration significative)
+            # 2. Latence réseau (15% - réduit pour donner plus de poids à l'équilibre)
             latency = row.get('network_latency_normalized', 0.5)
             # Amplifier l'impact de la latence : très faible latence = score très élevé
             latency_score = (1.0 - latency) ** 1.5  # Fonction exponentielle pour favoriser très faible latence
-            score += latency_score * 0.30  # 30% pour la latence
+            score += latency_score * 0.15  # 15% pour la latence (réduit de 20%)
             
-            # 3. Optimisation mémoire (20%) - Favoriser nodes avec moins de charge mémoire
+            # 3. Optimisation mémoire (8% - réduit pour donner plus de poids à l'équilibre)
             # Moins de charge mémoire = meilleur score
             memory_usage_score = 1.0 - mem_load  # Inverse : moins de charge = meilleur
-            score += memory_usage_score * 0.20  # 20% pour la mémoire
+            score += memory_usage_score * 0.08  # 8% pour la mémoire (réduit de 10%)
             
-            # 4. Ressources disponibles (10% - réduit car moins prioritaire)
-            score += (cpu_ratio * 0.05 + mem_ratio * 0.05)  # Total 10%
+            # 4. Ressources disponibles (2% - fortement réduit)
+            score += (cpu_ratio * 0.01 + mem_ratio * 0.01)  # Total 2% (réduit de 3%)
             
-            # 5. Score basé sur l'équilibre de charge (10% - réduit)
+            # 5. Score basé sur l'équilibre de charge (60% - PRIORITÉ ABSOLUE pour minimiser l'écart-type)
+            # Note: Le balance_score calculé dans feature_extractor minimise déjà l'écart-type futur
             balance_score = row.get('balance_score', None)
             if balance_score is None:
-                cpu_balance_penalty = abs(cpu_load - avg_cpu_load_cluster)
-                mem_balance_penalty = abs(mem_load - avg_memory_load_cluster)
-                balance_score = 1.0 - ((cpu_balance_penalty + mem_balance_penalty) / 2.0)
+                # Fallback : calculer approximativement (moins précis que dans feature_extractor)
+                # Pour l'entraînement, on utilise la distance à la moyenne comme approximation
+                cpu_deviation = abs(cpu_load - avg_cpu_load_cluster)
+                mem_deviation = abs(mem_load - avg_memory_load_cluster)
+                k_cpu = 25.0  # Facteur augmenté pour CPU (priorité sur l'équilibre CPU)
+                k_mem = 25.0  # Facteur pour mémoire
+                cpu_balance_score = np.exp(-k_cpu * cpu_deviation) if cpu_deviation > 0 else 1.0
+                mem_balance_score = np.exp(-k_mem * mem_deviation) if mem_deviation > 0 else 1.0
+                # Poids équilibré (50% CPU, 50% mémoire) pour améliorer les deux équilibres
+                balance_score = (cpu_balance_score * 0.5 + mem_balance_score * 0.5)
+                balance_score = max(0.0, min(1.0, balance_score))
             
-            score += balance_score * 0.10  # Réduit à 10%
+            score += balance_score * 0.60  # 60% pour l'équilibre (augmenté de 45% à 60%)
             
-            # 6. Pénalité de surcharge (5% - réduit)
-            overload_penalty = row.get('overload_penalty', 0.0)
-            score += (1.0 - overload_penalty) * 0.05  # Réduit à 5%
+            # 6. Pénalité de surcharge (0% - supprimé, déjà pris en compte dans l'écart-type)
+            # Note: La surcharge est déjà prise en compte dans le calcul de l'écart-type
             
             scores.append(max(0.0, min(1.0, score)))
         

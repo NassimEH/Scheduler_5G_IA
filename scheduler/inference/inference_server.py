@@ -194,19 +194,18 @@ def _default_heuristic(request: PredictionRequest) -> PredictionResponse:
     """
     Heuristique par défaut si le modèle n'est pas disponible.
     Priorise les nodes avec :
-    1. CPU bas mais efficace (zone optimale 30-60% pour réduire consommation)
-    2. Latence réseau minimale (PRIORITÉ ÉLEVÉE)
-    3. Mémoire optimisée (moins de charge mémoire)
-    4. Meilleur équilibre de charge
+    1. Équilibre de charge optimal (PRIORITÉ ABSOLUE - 60%) : minimise directement l'écart-type futur du cluster
+    2. CPU bas mais efficace (zone optimale 30-60% pour réduire consommation - 15%)
+    3. Latence réseau minimale (15%)
+    4. Mémoire optimisée (moins de charge mémoire - 8%)
+    5. Ressources disponibles (2%)
+    6. Moins de surcharge (0%)
     """
     node_scores = {}
     
-    # Pour l'heuristique, calculer la charge moyenne du cluster
+    # Pour l'heuristique, calculer la charge actuelle du cluster
     all_cpu_loads = [feature_extractor._get_node_cpu_load(node.name) for node in request.candidate_nodes]
     all_memory_loads = [feature_extractor._get_node_memory_load(node.name) for node in request.candidate_nodes]
-    
-    avg_cpu_load_cluster = sum(all_cpu_loads) / len(all_cpu_loads) if all_cpu_loads else 0.5
-    avg_memory_load_cluster = sum(all_memory_loads) / len(all_memory_loads) if all_memory_loads else 0.5
 
     for node in request.candidate_nodes:
         score = 0.0
@@ -214,7 +213,7 @@ def _default_heuristic(request: PredictionRequest) -> PredictionResponse:
         cpu_ratio = node.cpu_available / node.cpu_capacity if node.cpu_capacity > 0 else 0
         memory_ratio = node.memory_available / node.memory_capacity if node.memory_capacity > 0 else 0
         
-        # 1. Optimisation CPU (25%) - Zone optimale 30-60% pour réduire consommation
+        # 1. Optimisation CPU (15% - réduit pour donner plus de poids à l'équilibre)
         node_cpu_load = feature_extractor._get_node_cpu_load(node.name)
         cpu_usage_score = 0.0
         if 0.30 <= node_cpu_load <= 0.60:
@@ -224,35 +223,79 @@ def _default_heuristic(request: PredictionRequest) -> PredictionResponse:
         else:  # > 0.60
             cpu_usage_score = max(0.0, 1.0 - (node_cpu_load - 0.60) * 2.5)  # Sur-utilisation
         
-        score += cpu_usage_score * 0.25
+        score += cpu_usage_score * 0.15  # 15% (réduit de 20%)
         
-        # 2. Latence réseau (30% - PRIORITÉ ÉLEVÉE)
+        # 2. Latence réseau (15% - réduit pour donner plus de poids à l'équilibre)
         if node.network_latency is not None:
             # Amplifier l'impact : très faible latence = score très élevé
             normalized_latency = min(1.0, node.network_latency / 100.0)
             latency_score = (1.0 - normalized_latency) ** 1.5  # Fonction exponentielle
-            score += latency_score * 0.30
+            score += latency_score * 0.15  # 15% (réduit de 20%)
         
-        # 3. Optimisation mémoire (20%) - Favoriser nodes avec moins de charge mémoire
+        # 3. Optimisation mémoire (8% - réduit pour donner plus de poids à l'équilibre)
         node_memory_load = feature_extractor._get_node_memory_load(node.name)
         memory_usage_score = 1.0 - node_memory_load  # Inverse : moins de charge = meilleur
-        score += memory_usage_score * 0.20
+        score += memory_usage_score * 0.08  # 8% (réduit de 10%)
         
-        # 4. Ressources disponibles (10%)
-        score += cpu_ratio * 0.05
-        score += memory_ratio * 0.05
+        # 4. Ressources disponibles (2% - fortement réduit)
+        score += cpu_ratio * 0.01
+        score += memory_ratio * 0.01  # Total 2% (réduit de 3%)
         
-        # 5. Équilibre de charge (10%)
-        cpu_balance_penalty = abs(node_cpu_load - avg_cpu_load_cluster)
-        mem_balance_penalty = abs(node_memory_load - avg_memory_load_cluster)
-        balance_score = 1.0 - ((cpu_balance_penalty + mem_balance_penalty) / 2.0)
-        score += balance_score * 0.10
+        # 5. Équilibre de charge (60% - PRIORITÉ ABSOLUE pour minimiser l'écart-type)
+        # Calculer l'écart-type futur du cluster pour ce node
+        pod_cpu_request = request.pod.cpu_request if hasattr(request.pod, 'cpu_request') else 0.0
+        pod_mem_request = request.pod.memory_request if hasattr(request.pod, 'memory_request') else 0.0
         
-        # 6. Pénalité de surcharge (5%)
-        overload_penalty = 0.0
-        if node_cpu_load > 0.7 or node_memory_load > 0.7:
-            overload_penalty = 1.0
-        score += (1.0 - overload_penalty) * 0.05
+        # Estimer la charge future du node
+        future_cpu_load = node_cpu_load
+        future_mem_load = node_memory_load
+        if node.cpu_capacity > 0:
+            cpu_increase = pod_cpu_request / node.cpu_capacity
+            future_cpu_load = min(1.0, node_cpu_load + cpu_increase)
+        if node.memory_capacity > 0:
+            mem_increase = pod_mem_request / node.memory_capacity
+            future_mem_load = min(1.0, node_memory_load + mem_increase)
+        
+        # Construire le vecteur de charges futures pour tous les nodes
+        all_cpu_loads_future = []
+        all_memory_loads_future = []
+        for n in request.candidate_nodes:
+            if n.name == node.name:
+                all_cpu_loads_future.append(future_cpu_load)
+                all_memory_loads_future.append(future_mem_load)
+            else:
+                n_cpu_load = feature_extractor._get_node_cpu_load(n.name)
+                n_mem_load = feature_extractor._get_node_memory_load(n.name)
+                all_cpu_loads_future.append(n_cpu_load)
+                all_memory_loads_future.append(n_mem_load)
+        
+        # Calculer l'écart-type futur (ce que nous voulons minimiser)
+        import math
+        if len(all_cpu_loads_future) > 1:
+            # Calculer la moyenne
+            avg_cpu_future = sum(all_cpu_loads_future) / len(all_cpu_loads_future)
+            avg_mem_future = sum(all_memory_loads_future) / len(all_memory_loads_future)
+            # Calculer la variance puis l'écart-type
+            cpu_variance = sum((x - avg_cpu_future) ** 2 for x in all_cpu_loads_future) / len(all_cpu_loads_future)
+            mem_variance = sum((x - avg_mem_future) ** 2 for x in all_memory_loads_future) / len(all_memory_loads_future)
+            cpu_std_future = math.sqrt(cpu_variance)
+            mem_std_future = math.sqrt(mem_variance)
+        else:
+            cpu_std_future = 0.0
+            mem_std_future = 0.0
+        
+        # Score d'équilibre : inverse de l'écart-type (plus l'écart-type est faible, meilleur)
+        k_cpu = 25.0  # Facteur augmenté pour CPU (priorité sur l'équilibre CPU)
+        k_mem = 25.0  # Facteur pour mémoire
+        cpu_balance_score = math.exp(-k_cpu * cpu_std_future) if cpu_std_future >= 0 else 0.0
+        mem_balance_score = math.exp(-k_mem * mem_std_future) if mem_std_future >= 0 else 0.0
+        # Poids équilibré (50% CPU, 50% mémoire) pour améliorer les deux équilibres
+        balance_score = (cpu_balance_score * 0.5 + mem_balance_score * 0.5)
+        balance_score = max(0.0, min(1.0, balance_score))
+        score += balance_score * 0.60  # 60% (augmenté de 45% à 60% pour priorité absolue)
+        
+        # 6. Pénalité de surcharge (0% - supprimé pour donner tout le poids à l'équilibre)
+        # Note: La surcharge est déjà prise en compte dans le calcul de l'écart-type
         
         node_scores[node.name] = score
     

@@ -6,6 +6,7 @@ Utilisé pour préparer les données d'entrée du modèle ML.
 import os
 import logging
 from typing import List, Dict, Optional, Any
+import numpy as np
 import requests
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
@@ -96,24 +97,57 @@ class FeatureExtractor:
         pod_density = self._get_node_pod_density(node.name)
         features.append(pod_density)
         
-        # 6. NOUVEAU : Score d'équilibre global (plus le node est proche de la moyenne, mieux c'est)
+        # 6. Score d'équilibre global : MINIMISER DIRECTEMENT L'ÉCART-TYPE FUTUR
+        # Approche rigoureuse : calculer l'écart-type futur du cluster pour ce node
         if all_nodes and len(all_nodes) > 1:
-            # Calculer la charge moyenne du cluster
-            cluster_cpu_loads = []
-            cluster_mem_loads = []
+            # Calculer la charge future du node actuel après placement du pod
+            pod_cpu_request = pod.cpu_request if hasattr(pod, 'cpu_request') else 0.0
+            pod_mem_request = pod.memory_request if hasattr(pod, 'memory_request') else 0.0
+            
+            # Calculer la charge future (normalisée entre 0 et 1)
+            future_cpu_load = cpu_load
+            future_mem_load = memory_load
+            if node.cpu_capacity > 0:
+                cpu_increase = pod_cpu_request / node.cpu_capacity
+                future_cpu_load = min(1.0, cpu_load + cpu_increase)
+            if node.memory_capacity > 0:
+                mem_increase = pod_mem_request / node.memory_capacity
+                future_mem_load = min(1.0, memory_load + mem_increase)
+            
+            # Construire le vecteur de charges futures pour TOUS les nodes
+            future_cpu_loads = []
+            future_mem_loads = []
             for n in all_nodes:
-                n_cpu_load = self._get_node_cpu_load(n.name) if hasattr(n, 'name') else 0.0
-                n_mem_load = self._get_node_memory_load(n.name) if hasattr(n, 'name') else 0.0
-                cluster_cpu_loads.append(n_cpu_load)
-                cluster_mem_loads.append(n_mem_load)
+                if hasattr(n, 'name') and n.name == node.name:
+                    # Pour le node actuel, utiliser la charge future
+                    future_cpu_loads.append(future_cpu_load)
+                    future_mem_loads.append(future_mem_load)
+                else:
+                    # Pour les autres nodes, utiliser la charge actuelle
+                    n_cpu_load = self._get_node_cpu_load(n.name) if hasattr(n, 'name') else 0.0
+                    n_mem_load = self._get_node_memory_load(n.name) if hasattr(n, 'name') else 0.0
+                    future_cpu_loads.append(n_cpu_load)
+                    future_mem_loads.append(n_mem_load)
             
-            avg_cpu_load = sum(cluster_cpu_loads) / len(cluster_cpu_loads) if cluster_cpu_loads else 0.5
-            avg_mem_load = sum(cluster_mem_loads) / len(cluster_mem_loads) if cluster_mem_loads else 0.5
+            # Calculer l'écart-type futur du cluster (ce que nous voulons minimiser)
+            if len(future_cpu_loads) > 1:
+                cpu_std_future = np.std(future_cpu_loads)
+                mem_std_future = np.std(future_mem_loads)
+            else:
+                cpu_std_future = 0.0
+                mem_std_future = 0.0
             
-            # Score d'équilibre : plus proche de la moyenne = meilleur (pénalise les extrêmes)
-            cpu_balance_score = 1.0 - abs(cpu_load - avg_cpu_load)  # Plus proche = meilleur
-            mem_balance_score = 1.0 - abs(memory_load - avg_mem_load)
-            balance_score = (cpu_balance_score + mem_balance_score) / 2.0
+            # Score d'équilibre : inverse de l'écart-type (plus l'écart-type est faible, meilleur est le score)
+            # Normaliser : utiliser exp(-k * std) pour convertir en score entre 0 et 1
+            # k élevé pour fortement pénaliser les grands écarts-types
+            k_cpu = 25.0  # Facteur augmenté pour CPU (priorité sur l'équilibre CPU)
+            k_mem = 25.0  # Facteur pour mémoire
+            # Éviter division par zéro
+            cpu_balance_score = np.exp(-k_cpu * cpu_std_future) if cpu_std_future >= 0 else 0.0
+            mem_balance_score = np.exp(-k_mem * mem_std_future) if mem_std_future >= 0 else 0.0
+            # Poids équilibré (50% CPU, 50% mémoire) pour améliorer les deux équilibres
+            balance_score = (cpu_balance_score * 0.5 + mem_balance_score * 0.5)
+            balance_score = max(0.0, min(1.0, balance_score))
         else:
             balance_score = 0.5  # Neutre si pas assez de données
         
