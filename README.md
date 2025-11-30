@@ -2,6 +2,7 @@
 
 > **Projet** : Conception et implémentation d'un scheduler Kubernetes intelligent pour l'orchestration de fonctions réseau 5G  
 > **Contexte** : Optimisation du placement de pods selon des métriques de latence réseau, charge CPU/mémoire et contraintes spécifiques aux slices 5G (eMBB, URLLC, mMTC)
+> **Lien GitHub** : https://github.com/NassimEH/Scheduler_5G_IA
 
 ---
 
