@@ -77,7 +77,6 @@ echo "Suppression des dossiers de resultats..."
 remove_directory "results_default" "Resultats scheduler par defaut"
 remove_directory "results_ml" "Resultats scheduler ML"
 remove_directory "comparison_results" "Resultats de comparaison"
-remove_directory "img" "Ancien dossier img"
 
 # Supprimer les fichiers de donnees d'entrainement
 echo ""

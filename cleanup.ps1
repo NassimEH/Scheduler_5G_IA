@@ -8,7 +8,6 @@
     - results_default/ : Metriques du scheduler par defaut
     - results_ml/ : Metriques du scheduler ML
     - comparison_results/ : Resultats de comparaison (graphiques et rapports)
-    - img/ : Ancien dossier de resultats (si present)
     - training_data.csv : Donnees d'entrainement
     - scheduler/models/*.pkl : Modeles ML (optionnel)
 
@@ -91,7 +90,6 @@ Write-Host "`nSuppression des dossiers de resultats..." -ForegroundColor Yellow
 Remove-DirectoryWithSize -Path "results_default" -Description "Resultats scheduler par defaut"
 Remove-DirectoryWithSize -Path "results_ml" -Description "Resultats scheduler ML"
 Remove-DirectoryWithSize -Path "comparison_results" -Description "Resultats de comparaison"
-Remove-DirectoryWithSize -Path "img" -Description "Ancien dossier img"
 
 # Supprimer les fichiers de donnees d'entrainement
 Write-Host "`nSuppression des fichiers de donnees..." -ForegroundColor Yellow
