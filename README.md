@@ -164,6 +164,14 @@ Le graphique suivant illustre visuellement les différences de performance entre
 **Comparaison du déséquilibre de charge**
 ![Comparaison Déséquilibre](comparison_results/imbalance_comparison.png)
 
+**Résultats expérimentaux - Amélioration des déséquilibres CPU et mémoire**
+
+Le graphique ci-dessous montre les améliorations significatives obtenues avec le scheduler ML concernant les déséquilibres de charge CPU et mémoire :
+
+![Résultats - Amélioration des déséquilibres CPU et Mémoire](img/results.png)
+
+**Conclusion rapide :** Nous avons grandement amélioré les déséquilibres mémoire et CPU avec le Scheduler ML. Le graphique ci-dessus démontre une réduction notable du déséquilibre CPU (de 1.059% à 0.688%) et du déséquilibre mémoire (de 0.0227% à 0.0098%), confirmant l'efficacité de notre approche d'optimisation multi-critères.
+
 ### Analyse des résultats
 
 Le scheduler ML démontre des améliorations significatives par rapport au scheduler par défaut :
